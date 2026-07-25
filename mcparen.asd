@@ -1,7 +1,7 @@
 (asdf:defsystem #:mcparen
   :description "A small Model Context Protocol client for Common Lisp."
   :author "Lukáš Hozda"
-  :license "MIT"
+  :license "ISC"
   :version "0.1.0"
   :serial t
   :depends-on (#:bordeaux-threads
