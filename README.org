@@ -138,3 +138,5 @@ Run:
 
 The check loads =mcparen/tests= in a fresh SBCL process and runs its protocol
 and transport fixtures.
+
+Part of the [[https://www.lambda-symbolics.com/libraries][Lambda Symbolics library shelf]].
