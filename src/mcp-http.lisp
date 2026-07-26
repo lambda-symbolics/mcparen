@@ -484,12 +484,18 @@ returned values. The default calls the thunk without adding a scope."
 
 (-> mcp-http--stage-initialize-session-header
     (mcp-streamable-http-transport t
-     &key (:request-session t) (:initialize-request-p boolean))
+     &key (:request-session t) (:initialize-request-p boolean)
+          (:allow-repeated-session-p boolean))
     null)
 (defun mcp-http--stage-initialize-session-header
     (transport response-session
-     &key request-session initialize-request-p)
-  "Validate and stage RESPONSE-SESSION only for an initialize response."
+     &key request-session initialize-request-p allow-repeated-session-p)
+  "Validate and stage an initialization session header.
+
+A repeated response header matching the session carried by a subsequent HTTP
+POST is tolerated for compatibility with the reference Python MCP SDK. A
+missing, invalid, or changed session identifier still follows the normal
+protocol checks."
   (when initialize-request-p
     (with-lock-held ((mcp-http-transport-state-lock transport))
       (setf (mcp-http-transport-pending-session-identifier transport) nil)))
@@ -505,15 +511,20 @@ returned values. The default calls the thunk without adding a scope."
              :message "The MCP server returned an invalid session identifier."
              :method nil
              :payload nil))
-    (unless initialize-request-p
-      (error 'mcp-protocol-error
-             :message
-             "The MCP server returned a session identifier outside initialization."
-             :method nil
-             :payload nil))
-    (with-lock-held ((mcp-http-transport-state-lock transport))
-      (setf (mcp-http-transport-pending-session-identifier transport)
-            response-session)))
+    (cond
+      (initialize-request-p
+       (with-lock-held ((mcp-http-transport-state-lock transport))
+         (setf (mcp-http-transport-pending-session-identifier transport)
+               response-session)))
+      ((and allow-repeated-session-p
+            request-session
+            (equal response-session request-session)))
+      (t
+       (error 'mcp-protocol-error
+              :message
+              "The MCP server returned a new session identifier outside initialization."
+              :method nil
+              :payload nil))))
   nil)
 
 (-> mcp-http--exchange
@@ -591,7 +602,8 @@ returned values. The default calls the thunk without adding a scope."
                     transport
                     (mcp-http--header-value headers "Mcp-Session-Id")
                     :request-session request-session
-                    :initialize-request-p initialize-request-p)
+                    :initialize-request-p initialize-request-p
+                    :allow-repeated-session-p (eq method ':post))
                    (setf body-released-p t)
                    (values body status headers))
               (unless body-released-p

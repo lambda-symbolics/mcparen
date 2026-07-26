@@ -2581,10 +2581,11 @@
             (mcp-client-close client)
             (test-equal 0 delete-count)))))))
 
-(define-test http-rejects-session-headers-outside-initialization
-  (let ((delete-count 0))
+(define-test http-accepts-repeated-session-headers
+  (let ((delete-count 0)
+        (ping-count 0))
     (labels ((handler (server request)
-               "Return the active session header again on ping."
+               "Repeat the active session header, then return a changed one."
                (declare (ignore server))
                (cond
                  ((string= (test-http-request-method request) "DELETE")
@@ -2607,13 +2608,20 @@
                         (test-json-response-body
                          message (test-initialize-result))))
                       ((string= method "notifications/initialized")
-                       (values 202 nil ""))
+                       (values
+                        202
+                        (list (cons "Mcp-Session-Id" "session-stable"))
+                        ""))
                       ((string= method "ping")
+                       (incf ping-count)
                        (values
                         200
                         (list
                          (cons "Content-Type" "application/json")
-                         (cons "Mcp-Session-Id" "session-stable"))
+                         (cons "Mcp-Session-Id"
+                               (if (= ping-count 1)
+                                   "session-stable"
+                                   "session-changed")))
                         (test-json-response-body
                          message (json-object))))
                       (t
@@ -2627,11 +2635,12 @@
           (unwind-protect
                (progn
                  (mcp-client-connect client)
+                 (test-assert (mcp-client-ping client))
                  (let ((condition
                          (test-signals mcp-protocol-error
                            (mcp-client-ping client))))
                    (test-assert
-                    (search "outside initialization"
+                    (search "new session identifier outside initialization"
                             (mcp-error-message condition)))))
             (mcp-client-close client))
           (test-equal 1 delete-count))))))
