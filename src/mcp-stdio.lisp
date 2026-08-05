@@ -378,14 +378,14 @@ method-not-found response. The function must be bounded and thread-safe."
              :operation operation
              :seconds timeout))
     (handler-case
-        (sb-ext:with-timeout remaining
-          (with-lock-held ((mcp-stdio-transport-write-lock transport))
-            (let ((stream (mcp-stdio-transport-input transport)))
-              (unless (and stream (open-stream-p stream))
-                (error 'mcp-transport-error
-                       :message "The MCP stdio input stream is closed."
-                       :transport transport
-                       :cause nil))
+        (with-lock-held ((mcp-stdio-transport-write-lock transport))
+          (let ((stream (mcp-stdio-transport-input transport)))
+            (unless (and stream (open-stream-p stream))
+              (error 'mcp-transport-error
+                     :message "The MCP stdio input stream is closed."
+                     :transport transport
+                     :cause nil))
+            (ls-compat:with-timeout remaining
               (write-line
                (json-encode
                 message
@@ -394,7 +394,7 @@ method-not-found response. The function must be bounded and thread-safe."
                  transport))
                stream)
               (finish-output stream))))
-      (sb-ext:timeout ()
+      (ls-compat:timeout-expired ()
         (error 'mcp-timeout
                :message
                (format nil "~A timed out after ~,2F seconds."
@@ -732,7 +732,7 @@ method-not-found response. The function must be bounded and thread-safe."
     (loop
       for process-group =
         (handler-case
-            (sb-posix:getpgid identifier)
+            (ls-compat.posix:process-group-id identifier)
           (error ()
             nil))
       when (eql process-group identifier)
@@ -935,11 +935,8 @@ method-not-found response. The function must be bounded and thread-safe."
   (and (mcp-stdio-transport-process-group-p transport)
        (mcp-stdio-transport-process-group-identifier transport)
        (handler-case
-           (progn
-             (sb-posix:kill
-              (- (mcp-stdio-transport-process-group-identifier transport))
-              0)
-             t)
+           (ls-compat.posix:process-group-alive-p
+            (mcp-stdio-transport-process-group-identifier transport))
          (error ()
            nil))))
 
@@ -965,26 +962,22 @@ method-not-found response. The function must be bounded and thread-safe."
     null)
 (defun mcp-stdio--signal-process (transport process signal)
   "Send SIGNAL to PROCESS or its dedicated process group."
-  (let ((signal-number
-          (ecase signal
-            (:terminate sb-posix:sigterm)
-            (:kill sb-posix:sigkill))))
-    (labels ((signal-process ()
-               "Signal the direct process when its group is not established."
-               (handler-case
-                   (uiop:terminate-process
-                    process :urgent (eq signal ':kill))
-                 (error ()
-                   nil))))
-      (if (and (mcp-stdio-transport-process-group-p transport)
-               (mcp-stdio-transport-process-group-identifier transport))
-          (handler-case
-              (sb-posix:kill
-               (- (mcp-stdio-transport-process-group-identifier transport))
-               signal-number)
-            (error ()
-              (signal-process)))
-          (signal-process))))
+  (labels ((signal-process ()
+             "Signal the direct process when its group is not established."
+             (handler-case
+                 (uiop:terminate-process
+                  process :urgent (eq signal ':kill))
+               (error ()
+                 nil))))
+    (if (and (mcp-stdio-transport-process-group-p transport)
+             (mcp-stdio-transport-process-group-identifier transport))
+        (handler-case
+            (ls-compat.posix:signal-process-group
+             (mcp-stdio-transport-process-group-identifier transport)
+             signal)
+          (error ()
+            (signal-process)))
+        (signal-process)))
   nil)
 
 (-> mcp-stdio--reap-process (t) null)

@@ -6,7 +6,8 @@
   :serial t
   :depends-on (#:bordeaux-threads
                #:dexador
-               #:sb-posix
+               #:ls-compat
+               #:ls-compat/posix
                #:serapeum
                #:yason)
   :components ((:module "src"

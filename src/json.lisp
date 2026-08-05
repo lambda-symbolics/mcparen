@@ -295,8 +295,7 @@
             ((integerp number)
              (json--integer-character-upper-bound number))
             ((floatp number)
-             (when (or (sb-ext:float-infinity-p number)
-                       (sb-ext:float-nan-p number))
+             (unless (ls-compat:finite-float-p number)
                (error 'mcp-protocol-error
                       :message
                       (format nil

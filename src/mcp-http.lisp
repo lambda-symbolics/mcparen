@@ -386,7 +386,7 @@ returned values. The default calls the thunk without adding a scope."
                                  (find-symbol type-name package))))
                (and symbol
                     (ignore-errors (typep condition symbol))))))
-    (or (typep condition 'sb-ext:timeout)
+    (or (typep condition 'ls-compat:timeout-expired)
         (named-type-p "SB-SYS" "IO-TIMEOUT")
         (named-type-p "USOCKET" "TIMEOUT-ERROR")
         (named-type-p "USOCKET" "DEADLINE-TIMEOUT-ERROR"))))
@@ -1161,7 +1161,7 @@ protocol checks."
            (mcp-http-transport-connect-timeout transport)))
     (handler-case
         (multiple-value-bind (body status response-headers)
-            (sb-ext:with-timeout connect-timeout
+            (ls-compat:with-timeout connect-timeout
               (dexador:request
                (mcp-http-transport-url transport)
                :method :get
@@ -1204,7 +1204,7 @@ protocol checks."
              ((eql status 404) ':expired)
              ((eql status 405) ':unsupported)
              (t ':retry)))))
-      (sb-ext:timeout ()
+      (ls-compat:timeout-expired ()
         (values nil nil ':retry))
       (mcp-error (condition)
         (error condition))
@@ -1427,11 +1427,11 @@ protocol checks."
     (transport timeout function &key operation)
   "Call FUNCTION under one absolute TIMEOUT for HTTP OPERATION."
   (handler-case
-      (sb-ext:with-timeout timeout
+      (ls-compat:with-timeout timeout
         (funcall function))
     (mcp-error (condition)
       (error condition))
-    (sb-ext:timeout (cause)
+    (ls-compat:timeout-expired (cause)
       (mcp-http--signal-timeout
        transport timeout
        :operation operation
