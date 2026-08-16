@@ -3,22 +3,27 @@
 Mcparen is a small Common Lisp client for the Model Context Protocol. Its core
 loads on SBCL and Clozure CL on Unix-like systems and implements MCP 2025-11-25
 and 2025-06-18 over standard I/O and Streamable HTTP. It requests the newer
-revision and accepts the older revision when selected during protocol negotiation.
+revision and accepts the older revision when selected during protocol
+negotiation.
 
-The library handles JSON-RPC lifecycle, concurrent requests, typed errors,
-timeouts and cancellation, cursor pagination, tool calls, resources, prompts,
-HTTP sessions, and bounded process cleanup. It contains no agent, prompt, or
-application configuration policy.
+The library handles:
+
+- JSON-RPC lifecycle
+- concurrent requests
+- typed errors
+- timeouts and cancellation
+- cursor pagination
+- tool calls, resources, and prompts
+- HTTP sessions
+- bounded process cleanup
 
 List pagination is bounded before pages are accumulated. One list operation may
 read at most 1,000 pages and retain at most 10,000 items, 16 MiB of conservative
 encoded item and cursor data, and 100,000 item and cursor tree nodes. Session
-restarts begin a fresh accumulation and remain limited to eight attempts. These
+restarts begin a fresh accumulation and are limited to eight attempts. These
 reloadable bounds are exported with the =*mcp-pagination-= prefix.
 
 * Use
-
-Load the system through ASDF or Quicklisp:
 
 #+begin_src lisp
 (ql:quickload :mcparen)
@@ -67,8 +72,7 @@ Streamable HTTP transports also accept =:exchange-scope-function=. This function
 receives and synchronously invokes a zero-argument thunk around each complete
 HTTP exchange, from late header resolution through response parsing and
 dispatch. It can establish application-owned dynamic state for normal requests,
-SSE resumptions, idle listener cycles, and session deletion. The default simply
-invokes the thunk.
+SSE resumptions, idle listener cycles, and session deletion.
 
 Both transport constructors accept =:maximum-message-characters=. The default
 is 16 MiB. Mcparen rejects larger standard I/O messages, HTTP JSON bodies, SSE
@@ -76,23 +80,15 @@ lines, and aggregate SSE event data before retaining an unbounded document.
 Outbound documents are checked against the same transport-specific limit before
 encoding.
 
-JSON decoding performs a non-recursive lexical preflight before YASON and an
-iterative validation pass over the decoded tree. Encoding runs the iterative
-validation before YASON. The reloadable structural bounds allow at most 64
-nested containers, 100,000 value and key nodes, 65,536 elements per array,
-4,096 members per object, 4,096 characters per object key, 256 characters per
-number, and 12 MiB of decoded string content both per string and in aggregate.
-Programmatic cyclic objects and arrays are rejected.
-
 * JSON values
 
 Public raw MCP values use these exact Common Lisp representations:
 
-- JSON objects are hash tables with =equal= keys.
-- JSON arrays are vectors.
-- JSON strings and numbers are Common Lisp strings and numbers.
+- JSON objects are hash tables with =equal= keys
+- JSON arrays are vectors
+- JSON strings and numbers are Common Lisp strings and numbers
 - JSON =true=, =false=, and =null= are returned by
-  =json-true-value=, =json-false-value=, and =json-null-value=.
+  =json-true-value=, =json-false-value=, and =json-null-value=
 
 =json-object= constructs an object from alternating string keys and values.
 These representations are also used by tool schemas, raw tool metadata, tool
@@ -107,36 +103,13 @@ client when it is used again. =mcp-client-close= terminates owned resources.
 forked image that must not signal a parent-owned server.
 
 On supported POSIX systems, a standard I/O server must enter a process group led
-by its direct child process. Opening fails if that boundary is not established.
-Shutdown closes stdin, then uses bounded TERM and KILL phases. One ordered,
-bounded callback worker handles server requests and notifications. Reader
-threads, writes, message sizes, and stderr capture are bounded as well. Closing
-or detaching a transport discards retained server diagnostics.
+by its direct child process. Shutdown closes stdin, then uses bounded TERM and
+KILL phases.
 
-=make-mcp-stdio-transport= accepts an optional =:ingress-projector=. Mcparen
-calls it synchronously before retaining each decoded response, request, or
-notification and before retaining stderr or a reader failure. The projector
-receives a kind keyword and value and returns either that value or a detached
-replacement. It may return =nil= to drop stderr or a notification, make a
-response time out, replace a reader failure with a fixed diagnostic, or reject
-a server request with a JSON-RPC method-not-found response. Projectors must be
-bounded and thread-safe.
+* Tests
 
-Streamable HTTP requests share one absolute deadline across their initial POST,
-server callbacks, retry delay, and resumed SSE GET requests. A local timeout is
-reported as =mcp-timeout= so the client can send =notifications/cancelled=.
-Interrupted SSE streams resume with =Last-Event-ID= and respect the server's
-=retry= interval.
-
-* Checks
-
-Run:
-
-#+begin_src sh
+#+BEGIN_SRC sh
 ./script/check
-#+end_src
-
-The check loads =mcparen/tests= in a fresh SBCL process and runs its protocol
-and transport fixtures.
+#+END_SRC
 
 Part of the [[https://www.lambda-symbolics.com/libraries][Lambda Symbolics library shelf]].
