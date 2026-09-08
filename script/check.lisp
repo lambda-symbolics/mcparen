@@ -21,9 +21,11 @@
   (when (uiop:file-exists-p quicklisp)
     (load quicklisp :verbose nil :print nil))
   (asdf:clear-system '#:mcparen/tests)
+  (asdf:clear-system '#:mcparen/managed)
   (asdf:clear-system '#:mcparen)
   (asdf:load-asd system-definition)
   (require-local-system-definition '#:mcparen system-definition root)
+  (require-local-system-definition '#:mcparen/managed system-definition root)
   (require-local-system-definition '#:mcparen/tests system-definition root)
   (let ((warnings nil))
     (handler-bind
@@ -33,7 +35,7 @@
                (push (princ-to-string condition) warnings)))))
       (asdf:load-system
        '#:mcparen/tests
-       :force '(#:mcparen #:mcparen/tests)))
+       :force '(#:mcparen #:mcparen/managed #:mcparen/tests)))
     (when warnings
       (error "Local Mcparen compilation emitted warnings:~%~{  ~A~%~}"
              (nreverse warnings))))

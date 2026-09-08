@@ -184,6 +184,8 @@
        (finish-output *error-output*))
       ((string= method "ping")
        (write-json (response request (json-object))))
+      ((string= method "tools/list")
+       (write-json (response request (json-object "tools" #()))))
       ((string= method "tools/call")
        (let* ((params (json-get request "params"))
               (name (json-get params "name")))

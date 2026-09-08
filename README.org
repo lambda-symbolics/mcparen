@@ -106,6 +106,69 @@ On supported POSIX systems, a standard I/O server must enter a process group led
 by its direct child process. Shutdown closes stdin, then uses bounded TERM and
 KILL phases.
 
+* Managed connections
+
+Load =mcparen/managed= for shared restartable connections and discovery snapshots.
+Construct =mcp-managed-server= instances with =:name=, =:required-p= and either
+=:client= or =:client-factory=. A factory receives the server and a notification
+callback; pass that callback to the transport constructor.
+
+#+begin_src lisp
+(asdf:load-system :mcparen/managed)
+(defparameter *servers*
+  (make-instance 'mcparen:mcp-connection-manager
+                 :maximum-schema-bytes (* 1024 1024)
+                 :runtimes
+                 (list (make-instance
+                        'mcparen:mcp-managed-server :name "example"
+                        :client-factory
+                        (lambda (server notification-handler)
+                          (declare (ignore server))
+                          (mcparen:make-mcp-client
+                           (mcparen:make-mcp-streamable-http-transport
+                            "https://example.test/mcp"
+                            :notification-handler notification-handler)))))))
+(unwind-protect
+     (progn
+       (mcparen:mcp-manager-start *servers*)
+       (mcparen:mcp-manager-snapshot *servers*))
+  (mcparen:mcp-manager-close *servers*))
+#+end_src
+
+Use =mcp-manager-build= with zero-argument server factories for cleanup across
+factory and partial-startup failures. A server has one lifecycle owner; share
+that manager among application consumers. Required servers receive aggregate
+schema budget first, preserving presentation order. Optional failures are
+isolated, and failed discovery is cached until a refresh is requested.
+
+Use =mcp-manager-refresh= for explicit rediscovery, or
+=mcp-server-runtime-connect= at use boundaries. Notifications and transparent
+reconnections invalidate discovery. Read detached =mcp-discovery-snapshot=
+values through =mcp-server-runtime-snapshot= or =mcp-manager-snapshot=; each
+contains state, capabilities, generation, revision, tools and a diagnostic.
+Use =mcp-manager-collect= to aggregate resources or prompts, supplying a client
+list function and optionally an item identity function. Results and failures
+are separate, server-qualified lists; duplicate identities within a server
+are rejected when an identity function is supplied.
+Use =mcp-server-runtime-call= for scoped client operations. Consume or project
+secret-bearing results inside its callback before returning to the caller.
+
+Specialize the =mcp-managed-= protocol for credential scopes, diagnostic
+redaction, metadata projection and provider-specific schema validation.
+=mcp-managed-credential-key= returns a non-secret identity of the exact active
+credential snapshot and an optional resolution condition; enable persistent
+identity checks with =mcp-managed-credential-check-p=. Specialize
+=mcp-managed-call-with-local-cleanup= when local fallback needs application
+bindings without fresh credential resolution. Before callback entry, errors
+and nonlocal scope exits still trigger exactly one local teardown attempt. Use
+=mcp-server-runtime-cancel= to interrupt in-flight requests before closing.
+Close and detach leave connections restartable. Manager teardown is serialized
+against discovery.
+
+The lock order is manager, server, then notification revision. Scope and
+projection methods run synchronously. Within those methods, inspect the given
+server rather than reentering manager operations.
+
 * Tests
 
 #+BEGIN_SRC sh

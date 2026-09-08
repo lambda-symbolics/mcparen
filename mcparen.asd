@@ -21,14 +21,25 @@
                              (:file "mcp-client"))))
   :in-order-to ((asdf:test-op (asdf:test-op #:mcparen/tests))))
 
+(asdf:defsystem #:mcparen/managed
+  :description "Shared restartable MCP connections and bounded discovery snapshots."
+  :depends-on (#:mcparen #:babel)
+  :serial t
+  :components ((:module "src"
+                :serial t
+                :components ((:file "managed")
+                             (:file "managed-operations")
+                             (:file "managed-discovery")))))
+
 (asdf:defsystem #:mcparen/tests
   :description "Tests for Mcparen."
-  :depends-on (#:mcparen)
+  :depends-on (#:mcparen/managed)
   :serial t
   :components ((:module "tests"
                 :serial t
                 :components ((:file "test-support")
                              (:file "mcp-tests")
+                             (:file "managed-tests")
                              (:file "tests"))))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))

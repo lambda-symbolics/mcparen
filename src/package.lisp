@@ -1,3 +1,5 @@
+
+
 (defpackage #:mcparen
   (:use #:cl)
   (:import-from #:bordeaux-threads
@@ -11,9 +13,9 @@
                 #:make-thread
                 #:thread-alive-p
                 #:with-lock-held)
-  (:import-from #:serapeum
-                #:->)
-  (:export #:*json-maximum-aggregate-string-characters*
+  (:import-from #:serapeum #:->)
+  (:export #:mcp-managed-credential-key
+           #:*json-maximum-aggregate-string-characters*
            #:*json-maximum-array-elements*
            #:*json-maximum-depth*
            #:*json-maximum-nodes*
@@ -125,4 +127,90 @@
            #:mcp-transport-session-ready
            #:mcp-transport-set-protocol-version
            #:with-mcp-client
-           #:with-open-mcp-transport))
+           #:with-open-mcp-transport
+           #:mcp-server-runtime--connection-current-p
+           #:mcp-server-runtime-tools-stale-p
+           #:mcp-server-runtime-request-tool-refresh
+           #:mcp-server-runtime--discover-tools-stably
+           #:mcp-server-runtime--connect
+           #:mcp-server-runtime-close
+           #:mcp-server-runtime-detach
+           #:mcp-manager--close-runtimes
+           #:mcp-manager-close
+           #:mcp-manager-detach
+           #:mcp-manager-runtime
+           #:mcp-manager--ordered-runtimes
+           #:mcp-server-runtime--mark-failed
+           #:mcp-server-runtime--budget-usage
+           #:mcp-server-runtime--cached-failure
+           #:mcp-manager--runtime-failure-barrier-p
+           #:mcp-server-runtime--manager-connect-p
+           #:mcp-manager--connect-runtimes
+           #:mcp-server-runtime-connect
+           #:mcp-server-runtime--discard-connection
+           #:mcp-server-runtime--capability-p
+           #:mcp-managed-call-with-scope
+           #:mcp-managed-call-with-cleanup
+           #:mcp-managed-prepare-client
+           #:mcp-managed-reset-client
+           #:mcp-managed-check-credentials
+           #:mcp-managed-credential-check-p
+           #:mcp-managed-prepare-tools
+           #:mcp-managed-budget-error
+           #:mcp-managed-server
+           #:mcp-connection-manager
+           #:mcp-managed-server-error
+           #:mcp-managed-failure
+           #:mcp-managed-cached-error
+           #:mcp-managed-schema-limit
+           #:mcp-managed-error
+           #:mcp-managed-project-result
+           #:mcp-managed-budget-exceeded
+           #:mcp-manager-start
+           #:mcp-manager-refresh
+           #:mcp-manager-build
+           #:mcp-manager-collect
+           #:mcp-manager-snapshot
+           #:mcp-server-runtime-snapshot
+           #:mcp-server-runtime-cancel
+           #:mcp-manager-tool-revisions
+           #:*mcp-maximum-retained-input-schema-bytes*
+           #:*mcp-tool-discovery-restart-limit*
+           #:mcp-managed-error-server-name
+           #:mcp-managed-error-required-p
+           #:mcp-managed-error-cause
+           #:mcp-managed-budget-resource
+           #:mcp-managed-budget-allocated
+           #:mcp-managed-budget-requested
+           #:mcp-managed-call-with-local-cleanup
+           #:mcp-server-runtime-call
+           #:mcp-managed-budget-limit
+           #:mcp-server-runtime-name
+           #:mcp-managed-required-p
+           #:mcp-server-runtime-client
+           #:mcp-managed-client-factory
+           #:mcp-server-runtime-lock
+           #:mcp-server-runtime-state
+           #:mcp-server-runtime-failure
+           #:mcp-server-runtime-tools
+           #:mcp-server-runtime-tool-schema-bytes
+           #:mcp-server-runtime-manager
+           #:mcp-server-runtime-launch-environment-fingerprint
+           #:mcp-server-runtime-observed-connection-generation
+           #:mcp-server-runtime-tools-change-version
+           #:mcp-server-runtime-tools-change-lock
+           #:mcp-server-runtime-tools-discovered-version
+           #:mcp-server-runtime-tools-revision
+           #:mcp-manager-runtimes
+           #:mcp-manager-maximum-schema-bytes
+           #:mcp-manager-lock
+           #:mcp-discovery-snapshot-name
+           #:mcp-discovery-snapshot-state
+           #:mcp-discovery-snapshot-generation
+           #:mcp-discovery-snapshot-revision
+           #:mcp-discovery-snapshot-requested-version
+           #:mcp-discovery-snapshot-discovered-version
+           #:mcp-discovery-snapshot-capabilities
+           #:mcp-discovery-snapshot-tools
+           #:mcp-discovery-snapshot-schema-bytes
+           #:mcp-discovery-snapshot-diagnostic))
