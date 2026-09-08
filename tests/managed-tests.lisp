@@ -50,7 +50,9 @@
 
 (defclass test-cleanup-managed-server (mcp-managed-server)
   ((scope-failure :initarg :scope-failure :initform nil :accessor test-managed-scope-failure
-                  :documentation "Whether credential scope entry must fail."))
+                  :documentation "Whether credential scope entry must fail.")
+   (local-cleanup-function :initform nil :accessor test-managed-local-cleanup-function
+                           :documentation "Optional replacement for the local cleanup scope."))
   (:documentation "A connection whose injected cleanup credentials may be unavailable."))
 
 (define-condition test-managed-cleanup-abort (serious-condition) ()
@@ -58,12 +60,21 @@
 
 (defmethod mcp-managed-call-with-cleanup ((server test-cleanup-managed-server) function)
   "Model credential scope errors and nonlocal exits before local cleanup."
-  (case (test-managed-scope-failure server)
-    (:throw (throw 'test-managed-cleanup :aborted))
-    (:serious (error 'test-managed-cleanup-abort))
-    ((nil) nil)
-    (otherwise (error "Credential resolver unavailable.")))
-  (funcall function))
+  (block nil
+    (case (test-managed-scope-failure server)
+      (:throw (throw 'test-managed-cleanup :aborted))
+      (:serious (error 'test-managed-cleanup-abort))
+      (:skip (return nil))
+      ((nil) nil)
+      (otherwise (error "Credential resolver unavailable.")))
+    (funcall function)))
+
+(defmethod mcp-managed-call-with-local-cleanup
+    ((server test-cleanup-managed-server) function cause)
+  "Inject local scope-entry failure independently of the cleanup callback."
+  (if (test-managed-local-cleanup-function server)
+      (funcall (test-managed-local-cleanup-function server) function cause)
+      (call-next-method)))
 
 ;;;; -- Migrated Lifecycle and Discovery Cases --
 
@@ -416,6 +427,55 @@
       (mcp-managed-call-with-cleanup server
        (lambda () (incf calls) (error "Local cleanup failed."))))
     (test-equal 1 calls)))
+
+(define-test managed-cleanup-preserves-scope-exits
+  (dolist (scope-failure '(:throw :serious))
+    (dolist (cleanup-failure '(:error :serious :throw))
+      (let ((server (test-managed-server "scope-exit"
+                                        :server-class 'test-cleanup-managed-server))
+            (calls 0))
+        (setf (test-managed-scope-failure server) scope-failure)
+        (let ((outcome
+                (handler-case
+                    (catch 'test-managed-cleanup
+                      (mcp-managed-call-with-cleanup
+                       server
+                       (lambda ()
+                         (incf calls)
+                         (ecase cleanup-failure
+                           (:error (error "Local cleanup failed."))
+                           (:serious (error 'serious-condition))
+                           (:throw (throw 'test-managed-cleanup :cleanup-aborted))))))
+                  (serious-condition (condition) condition))))
+          (if (eq scope-failure :throw)
+              (test-equal :aborted outcome)
+              (test-assert (typep outcome 'test-managed-cleanup-abort)))
+          (test-equal 1 calls))))))
+
+(define-test managed-cleanup-local-scope-failure
+  (dolist (scope-failure '(:skip t :throw :serious))
+    (let ((server (test-managed-server "local-scope"
+                                      :server-class 'test-cleanup-managed-server))
+          (failure (make-condition 'simple-error :format-control "Local scope failed."))
+          (attempts 0)
+          (calls 0))
+      (setf (test-managed-scope-failure server) scope-failure
+            (test-managed-local-cleanup-function server)
+            (lambda (function cause)
+              (declare (ignore function cause))
+              (incf attempts)
+              (error failure)))
+      (let ((outcome
+              (handler-case
+                  (catch 'test-managed-cleanup
+                    (mcp-managed-call-with-cleanup server (lambda () (incf calls))))
+                (serious-condition (condition) condition))))
+        (case scope-failure
+          (:throw (test-equal :aborted outcome))
+          (:serious (test-assert (typep outcome 'test-managed-cleanup-abort)))
+          (otherwise (test-assert (eq failure outcome))))
+        (test-equal 1 attempts)
+        (test-equal 0 calls)))))
 
 (define-test managed-stdio-cleanup-with-unavailable-credentials
   (let* ((transport (make-test-stdio-transport))

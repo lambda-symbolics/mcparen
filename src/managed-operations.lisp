@@ -16,27 +16,39 @@
   "Guarantee exactly one local teardown attempt when scope entry fails or unwinds.
 Ordinary scope-entry errors use local cleanup. Other nonlocal exits keep their
 original outcome after the local attempt. Never repeat a failed cleanup callback."
-  (let ((started-p nil))
+  (let ((started-p nil)
+        (completed-p nil))
     (labels ((cleanup ()
                (setf started-p t)
                (funcall function))
 
              (fallback (cause)
-               (mcp-managed-call-with-local-cleanup server #'cleanup cause)))
+               (setf started-p t)
+               (mcp-managed-call-with-local-cleanup server #'cleanup cause))
+
+             (preserve-exit (cause)
+               (block nil
+                 (unwind-protect
+                      (handler-case (fallback cause)
+                        (serious-condition () nil))
+                   (return nil)))))
       (unwind-protect
-           (handler-case
-               (call-next-method server #'cleanup)
-             (error (cause)
-               (if started-p
-                   (error cause)
-                   (fallback cause)))
-             (serious-condition (cause)
-               (unwind-protect
-                    (unless started-p
-                      (ignore-errors (fallback cause)))
-                 (error cause))))
+           (multiple-value-prog1
+               (handler-case
+                   (call-next-method server #'cleanup)
+                 (error (cause)
+                   (if started-p
+                       (error cause)
+                       (fallback cause)))
+                 (serious-condition (cause)
+                   (unless started-p
+                     (preserve-exit cause))
+                   (error cause)))
+             (setf completed-p t))
         (unless started-p
-          (fallback nil))))))
+          (if completed-p
+              (fallback nil)
+              (preserve-exit nil)))))))
 
 (-> mcp-server-runtime-call (mcp-managed-server function) t)
 (defun mcp-server-runtime-call (server function)
