@@ -76,6 +76,17 @@
       (funcall (test-managed-local-cleanup-function server) function cause)
       (call-next-method)))
 
+(defclass test-observed-cleanup-server (test-cleanup-managed-server)
+  ((observer :initarg :observer :reader test-managed-cleanup-observer
+             :documentation "The observer called before entering the cleanup scope."))
+  (:documentation "A managed connection with observable teardown ordering."))
+
+(defmethod mcp-managed-call-with-cleanup :before
+    ((server test-observed-cleanup-server) function)
+  "Observe scope entry before the cleanup callback or its local fallback."
+  (declare (ignore function))
+  (funcall (test-managed-cleanup-observer server) server))
+
 ;;;; -- Migrated Lifecycle and Discovery Cases --
 
 (define-test managed-stable-generation-and-bounded-churn
@@ -333,6 +344,84 @@
    (test-assert (and failure (search "SECOND" failure))
     "concurrent MCP close reports the first failure in close order"))
  nil)
+
+(define-test managed-close-owns-workers-during-fallback-exit
+  (dolist (later-exit-p '(nil t))
+    (let* ((original-make-thread (symbol-function 'make-thread))
+           (release (sb-thread:make-semaphore))
+           (lock (make-lock "Managed close observations"))
+           (counts (make-hash-table :test #'equal))
+           (ownership-observed nil)
+           (workers nil)
+           (launches 0)
+           (manager nil)
+           (servers
+             (loop for name in '("worker-one" "worker-two" "abort" "remaining")
+                   collect
+                   (test-managed-server
+                    name :server-class 'test-observed-cleanup-server
+                    :initargs
+                    (list :scope-failure (when (string= name "abort") :throw)
+                          :observer
+                          (lambda (server)
+                            (let ((name (mcp-server-runtime-name server)))
+                              (with-lock-held (lock)
+                                (incf (gethash name counts 0)))
+                              (cond
+                                ((search "worker-" name)
+                                 (let* ((released-p
+                                          (sb-thread:wait-on-semaphore release :timeout 3))
+                                        (acquired-p
+                                          (bordeaux-threads:acquire-lock
+                                           (mcp-manager-lock manager) nil)))
+                                   (when acquired-p
+                                     (bordeaux-threads:release-lock (mcp-manager-lock manager)))
+                                   (with-lock-held (lock)
+                                     (push (and released-p (not acquired-p)) ownership-observed))))
+                                ((string= name "remaining")
+                                 (sb-thread:signal-semaphore release 2)
+                                 (when later-exit-p
+                                   (throw 'test-managed-cleanup :later-abort)))))))))))
+      (setf manager (make-instance 'mcp-connection-manager :runtimes (reverse servers)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'make-thread)
+                   (lambda (function &key name)
+                     (when (= (incf launches) 3)
+                       (error "Injected close worker creation failure."))
+                     (let ((worker (funcall original-make-thread function :name name)))
+                       (push worker workers)
+                       worker)))
+             (test-equal :aborted
+                         (catch 'test-managed-cleanup (mcp-manager-close manager)))
+             (test-assert (every (lambda (worker) (not (thread-alive-p worker))) workers))
+             (with-lock-held (lock)
+               (test-equal '(t t) ownership-observed)
+               (dolist (server servers)
+                 (test-equal 1 (gethash (mcp-server-runtime-name server) counts)))))
+        (setf (symbol-function 'make-thread) original-make-thread)
+        (sb-thread:signal-semaphore release 2)
+        (dolist (worker workers) (join-thread worker))))))
+
+(define-test managed-close-joins-workers-after-join-failure
+  (let ((original-join-thread (symbol-function 'join-thread))
+        (failure (make-condition 'simple-error :format-control "Injected join failure."))
+        (joined 0))
+    (unwind-protect
+         (progn
+           (setf (symbol-function 'join-thread)
+                 (lambda (thread)
+                   (funcall original-join-thread thread)
+                   (when (= (incf joined) 1)
+                     (error failure))))
+           (test-assert
+            (eq failure
+                (handler-case
+                    (mcp-manager--close-runtimes '(:first :second :third)
+                                                (lambda (runtime) (declare (ignore runtime))))
+                  (error (condition) condition))))
+           (test-equal 3 joined))
+      (setf (symbol-function 'join-thread) original-join-thread))))
 
 
 (defclass test-rotating-managed-server (mcp-managed-server)

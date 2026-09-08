@@ -317,26 +317,44 @@
 
 
 (defun mcp-manager--close-runtimes (runtimes close-function)
-  "Close RUNTIMES concurrently with CLOSE-FUNCTION and signal the first failure."
+  "Close RUNTIMES concurrently with CLOSE-FUNCTION and signal the first failure.
+Finish pending teardown and join owned workers before propagating a nonlocal exit."
   (let* ((runtime-vector (coerce runtimes 'simple-vector))
          (failures (make-array (length runtime-vector) :initial-element nil))
+         (next-position 0)
          (threads nil))
     (labels ((close-at (index)
                (handler-case (funcall close-function (aref runtime-vector index))
-                             (serious-condition (condition)
-                              (setf (aref failures index) condition)))))
-      (loop for index below (length runtime-vector)
-            do (let ((position index))
-                 (handler-case
-                  (push
-                   (make-thread (lambda () (close-at position)) :name
-                                "MCP managed server close")
-                   threads)
-                  (serious-condition nil
-                   (loop for remaining from position below (length runtime-vector)
-                         do (close-at remaining))
-                   (return)))))
-      (dolist (thread threads) (join-thread thread))
+                 (serious-condition (condition)
+                   (setf (aref failures index) condition))))
+
+             (close-next ()
+               (close-at (prog1 next-position (incf next-position))))
+
+             (join-next ()
+               (join-thread (pop threads)))
+
+             (preserve-exit (function)
+               (block nil
+                 (unwind-protect
+                      (handler-case (funcall function)
+                        (serious-condition () nil))
+                   (return nil)))))
+      (unwind-protect
+           (progn
+             (loop while (< next-position (length runtime-vector))
+                   do (let ((position next-position))
+                        (handler-case
+                            (push (make-thread (lambda () (close-at position))
+                                               :name "MCP managed server close")
+                                  threads)
+                          (serious-condition () (return)))
+                        (incf next-position)))
+             (loop while (< next-position (length runtime-vector)) do (close-next))
+             (loop while threads do (join-next)))
+        (loop while (< next-position (length runtime-vector))
+              do (preserve-exit #'close-next))
+        (loop while threads do (preserve-exit #'join-next)))
       (loop for failure across failures
             when failure
             do (error failure))))
