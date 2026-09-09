@@ -774,8 +774,11 @@ method-not-found response. The function must be bounded and thread-safe."
                             (mcp-stdio--launch-arguments transport))
                      (mcp-stdio-transport-process transport)
                      process)
-               (let ((identifier (uiop:process-info-pid process)))
-                 (setf (mcp-stdio-transport-process-group-p transport) t
+               (let ((identifier (uiop:process-info-pid process))
+                     (process-groups-p
+                       (ls-compat.posix:process-groups-supported-p)))
+                 (setf (mcp-stdio-transport-process-group-p transport)
+                       process-groups-p
                        (mcp-stdio-transport-process-group-identifier transport)
                        identifier
                        (mcp-stdio-transport-input transport)
@@ -784,8 +787,10 @@ method-not-found response. The function must be bounded and thread-safe."
                        (uiop:process-info-output process)
                        (mcp-stdio-transport-error-output transport)
                        (uiop:process-info-error-output process))
-                 (mcp-stdio--await-process-group
-                  transport process identifier))
+                 ;; Hosts without process groups supervise the direct process.
+                 (when process-groups-p
+                   (mcp-stdio--await-process-group
+                    transport process identifier)))
                (setf (mcp-stdio-transport-reader-failure transport) nil
                      (mcp-stdio-transport-stderr-text transport) ""
                      (mcp-stdio-transport-closing-p transport) nil
