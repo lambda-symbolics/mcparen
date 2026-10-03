@@ -1,4 +1,14 @@
 (require '#:asdf)
+
+;; The test process passes a closed source registry for yason as the only
+;; argument; run by hand, the fixture falls back to the default registry.
+;; It is installed before any REQUIRE, which also consults the registry.
+(let ((registry (second sb-ext:*posix-argv*)))
+  (when registry
+    (asdf:initialize-source-registry
+     (with-standard-io-syntax
+       (let ((*read-eval* nil))
+         (read-from-string registry))))))
 (require '#:sb-posix)
 (asdf:load-system '#:yason)
 

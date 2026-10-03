@@ -279,6 +279,43 @@
    (format nil "tests/fixtures/~A" name)
    (asdf:system-source-directory '#:mcparen)))
 
+(-> test-fixture--system-directories (string) list)
+(defun test-fixture--system-directories (name)
+  "Return the source directories of system NAME and everything it depends on."
+  (let ((directories nil)
+        (visited nil))
+    (labels ((visit (system-name)
+               (let ((system (asdf:find-system system-name)))
+                 (unless (member (asdf:component-name system) visited
+                                 :test #'string=)
+                   (push (asdf:component-name system) visited)
+                   (pushnew (coerce (namestring (asdf:system-source-directory system))
+                                    '(simple-array character (*)))
+                            directories :test #'string=)
+                   (dolist (dependency (asdf:system-depends-on system))
+                     (when (stringp dependency)
+                       (visit dependency)))))))
+      (visit name))
+    (nreverse directories)))
+
+(-> test-fixture-script-arguments (string) list)
+(defun test-fixture-script-arguments (name)
+  "Return SBCL arguments running fixture script NAME with a closed source registry.
+
+The fixture receives, as its only argument, a source registry naming exactly
+the directories of yason and its dependencies as this process loaded them,
+so it starts without crawling every system the host happens to have."
+  (list "--noinform"
+        "--disable-debugger"
+        "--script"
+        (namestring (test-fixture-pathname name))
+        (with-standard-io-syntax
+          (prin1-to-string
+           `(:source-registry
+             ,@(mapcar (lambda (directory) (list ':directory directory))
+                       (test-fixture--system-directories "yason"))
+             :ignore-inherited-configuration)))))
+
 (-> make-test-stdio-transport
     (&key (:maximum-message-characters t)
           (:request-handler t)
@@ -291,11 +328,7 @@
   "Return a stdio transport connected to the local Common Lisp fixture."
   (make-mcp-stdio-transport
    (namestring sb-ext:*runtime-pathname*)
-   :arguments
-   (list "--noinform"
-         "--disable-debugger"
-         "--script"
-         (namestring (test-fixture-pathname "stdio-server.lisp")))
+   :arguments (test-fixture-script-arguments "stdio-server.lisp")
    :maximum-message-characters
    (or maximum-message-characters
        *mcp-maximum-message-characters*)

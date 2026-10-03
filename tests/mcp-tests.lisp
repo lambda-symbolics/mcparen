@@ -1662,13 +1662,7 @@
              (make-mcp-stdio-transport
               (namestring sb-ext:*runtime-pathname*)
               :arguments
-              (list
-               "--noinform"
-               "--disable-debugger"
-               "--script"
-               (namestring
-                (test-fixture-pathname
-                 "stdio-server.lisp")))
+              (test-fixture-script-arguments "stdio-server.lisp")
               :request-handler
               (lambda (method params)
                 (test-equal
