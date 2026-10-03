@@ -78,20 +78,30 @@ Both transport constructors accept =:maximum-message-characters=. The default
 is 16 MiB. Mcparen rejects larger standard I/O messages, HTTP JSON bodies, SSE
 lines, and aggregate SSE event data before retaining an unbounded document.
 Outbound documents are checked against the same transport-specific limit before
-encoding.
+encoding. Every document is also held to the structural bounds in
+=*mcp-json-limits*=, an argo =json-limits= value that defaults to
+=argo:*json-strict-limits*= (nesting depth, nodes, string and key lengths,
+members, elements, and number lengths). Exceeding the character limit signals
+=mcp-message-too-large=; malformed JSON, an exceeded structural bound, or an
+outbound value with no JSON form signals =mcp-protocol-error=.
 
 * JSON values
 
-Public raw MCP values use these exact Common Lisp representations:
+Mcparen decodes and encodes with [[https://github.com/lambda-symbolics/argo][argo]]
+and uses its value model for every public raw MCP value:
 
-- JSON objects are hash tables with =equal= keys
+- JSON objects are hash tables with =equal= string keys
 - JSON arrays are vectors
 - JSON strings and numbers are Common Lisp strings and numbers
-- JSON =true=, =false=, and =null= are returned by
-  =json-true-value=, =json-false-value=, and =json-null-value=
+- JSON =true= is =T=
+- JSON =false= is the marker returned by =argo:json-false=, which
+  =argo:json-get= reads as =NIL=
+- JSON =null= is =NIL=; use =gethash= or =argo:json-get-present= where a
+  present null must differ from an absent member
 
-=json-object= constructs an object from alternating string keys and values.
-These representations are also used by tool schemas, raw tool metadata, tool
+Decoding is strict RFC 8259. =json-object= is argo's constructor of an object
+from alternating string keys and values. When building values, yason's boolean
+symbols and =:null= are also accepted. These representations are also used by tool schemas, raw tool metadata, tool
 arguments, structured results, resources, and prompts.
 
 * Lifecycle
