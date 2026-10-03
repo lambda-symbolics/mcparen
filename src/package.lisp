@@ -14,15 +14,31 @@
                 #:thread-alive-p
                 #:with-lock-held)
   (:import-from #:serapeum #:->)
+  (:import-from #:argo
+                #:*json-strict-limits*
+                #:json-encode-utf8
+                #:json-error
+                #:json-error-message
+                #:json-false
+                #:json-false-p
+                #:json-get
+                #:json-limit-exceeded
+                #:json-limit-exceeded-constraint
+                #:json-limits
+                #:json-limits-maximum-aggregate-string-characters
+                #:json-limits-maximum-array-elements
+                #:json-limits-maximum-depth
+                #:json-limits-maximum-nodes
+                #:json-limits-maximum-number-characters
+                #:json-limits-maximum-object-key-characters
+                #:json-limits-maximum-object-members
+                #:json-limits-maximum-string-characters
+                #:json-object
+                #:json-syntax-error
+                #:json-true-p
+                #:make-json-limits)
   (:export #:mcp-managed-credential-key
-           #:*json-maximum-aggregate-string-characters*
-           #:*json-maximum-array-elements*
-           #:*json-maximum-depth*
-           #:*json-maximum-nodes*
-           #:*json-maximum-number-characters*
-           #:*json-maximum-object-key-characters*
-           #:*json-maximum-object-members*
-           #:*json-maximum-string-characters*
+           #:*mcp-json-limits*
            #:*mcp-pagination-maximum-aggregate-bytes*
            #:*mcp-pagination-maximum-aggregate-nodes*
            #:*mcp-pagination-maximum-items*
@@ -31,10 +47,7 @@
            #:make-mcp-client
            #:make-mcp-stdio-transport
            #:make-mcp-streamable-http-transport
-           #:json-false-value
-           #:json-null-value
            #:json-object
-           #:json-true-value
            #:mcp-call-result
            #:mcp-call-result-content
            #:mcp-call-result-error-p

@@ -4,12 +4,12 @@
   :license "ISC"
   :version "0.1.0"
   :serial t
-  :depends-on (#:bordeaux-threads
+  :depends-on (#:argo
+               #:bordeaux-threads
                #:dexador
                #:ls-compat
                #:ls-compat/posix
-               #:serapeum
-               #:yason)
+               #:serapeum)
   :components ((:module "src"
                 :serial t
                 :components ((:file "package")

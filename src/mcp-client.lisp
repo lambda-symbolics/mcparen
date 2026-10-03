@@ -613,6 +613,36 @@ interprets it for protocol revisions that define task-augmented requests.")
              :payload nil)))
   nil)
 
+(-> mcp-client--json-node-count (t) integer)
+(defun mcp-client--json-node-count (value)
+  "Return the JSON nodes in decoded VALUE, counting each object key as a node."
+  (let ((stack (list value))
+        (nodes 0))
+    (loop while stack
+          for current = (pop stack)
+          do (incf nodes)
+             (cond
+               ((hash-table-p current)
+                (maphash (lambda (key member)
+                           (declare (ignore key))
+                           (incf nodes)
+                           (push member stack))
+                         current))
+               ((and (vectorp current)
+                     (not (stringp current)))
+                (loop for element across current
+                      do (push element stack)))))
+    nodes))
+
+(-> mcp-client--json-measure (t string) (values integer integer))
+(defun mcp-client--json-measure (value source-name)
+  "Return decoded VALUE's node count and UTF-8 encoded byte count.
+
+VALUE comes from a bounded decoded response, so it is finite and acyclic.
+SOURCE-NAME names it in any encoding failure."
+  (values (mcp-client--json-node-count value)
+          (length (json-encode-octets value :source-name source-name))))
+
 (-> mcp-client--pagination-limit-error
     (string string integer)
     null)
@@ -696,18 +726,12 @@ interprets it for protocol revisions that define task-augmented requests.")
                                          :payload result))
                                 (multiple-value-setq
                                     (cursor-nodes cursor-bytes)
-                                  (json-value-measure
-                                   next-cursor
-                                   :source-name
-                                   "MCP pagination cursor"
-                                   :maximum-encoded-bytes nil)))
+                                  (mcp-client--json-measure
+                                   next-cursor "MCP pagination cursor")))
                               (multiple-value-bind
                                     (page-nodes page-bytes)
-                                  (json-value-measure
-                                   page-items
-                                   :source-name
-                                   "MCP pagination page"
-                                   :maximum-encoded-bytes nil)
+                                  (mcp-client--json-measure
+                                   page-items "MCP pagination page")
                                 (let ((prospective-items
                                         (+ aggregate-items
                                            page-item-count))

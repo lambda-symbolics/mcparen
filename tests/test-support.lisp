@@ -171,8 +171,8 @@
    "protocolVersion" "2025-11-25"
    "capabilities"
    (json-object
-    "tools" (json-object "listChanged" yason:false)
-    "resources" (json-object "subscribe" yason:false))
+    "tools" (json-object "listChanged" (json-false))
+    "resources" (json-object "subscribe" (json-false)))
    "serverInfo"
    (json-object "name" "mcparen-test-server" "version" "1")
    "instructions" "Deterministic local fixture."))

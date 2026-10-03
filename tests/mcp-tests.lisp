@@ -8,7 +8,7 @@
          (client-capabilities
            (json-object
             "roots"
-            (json-object "listChanged" yason:true)))
+            (json-object "listChanged" t)))
          (client
            (make-mcp-client
             transport
@@ -247,8 +247,8 @@
                             "second"
                             "Second tool"
                             (json-object
-                             "readOnlyHint" yason:false
-                             "destructiveHint" yason:false))))))
+                             "readOnlyHint" (json-false)
+                             "destructiveHint" (json-false)))))))
                       (test-rpc-result
                        request
                        (json-object
@@ -258,8 +258,8 @@
                           "first"
                           "First tool"
                           (json-object
-                           "readOnlyHint" yason:true
-                           "destructiveHint" yason:false)))
+                           "readOnlyHint" t
+                           "destructiveHint" (json-false))))
                         "nextCursor" "tools-two"))))
                  ((string= method "resources/list")
                   (if cursor
@@ -559,7 +559,7 @@
                  (test-rpc-result request (test-initialize-result))
                  (test-rpc-error
                   request -32042 "Fixture refused"
-                  (json-object "retryable" yason:false)))))
+                  (json-object "retryable" (json-false))))))
     (let* ((transport (make-test-scripted-transport #'handler))
            (client (make-mcp-client transport)))
       (unwind-protect
@@ -571,10 +571,8 @@
                          (mcp-protocol-error-method condition)
                          :test #'string=)
              (test-assert
-              (eq yason:false
-                  (json-get
-                   (mcp-rpc-error-data condition)
-                   "retryable"))))
+              (json-false-p
+               (gethash "retryable" (mcp-rpc-error-data condition)))))
         (mcp-client-close client)))))
 
 (define-test client-preserves-tool-content-and-structured-result
@@ -603,8 +601,8 @@
                     "structuredContent"
                     (json-object
                      "answer" 42
-                     "nested" (json-object "ok" yason:true))
-                    "isError" yason:false)))
+                     "nested" (json-object "ok" t))
+                    "isError" (json-false))))
                  (t
                   (error "Unexpected tool-result test method ~S."
                          method))))))
@@ -633,14 +631,6 @@
              (test-assert (search "Structured content:" rendered)))
         (mcp-client-close client)))))
 
-(define-test json-rejects-trailing-documents
-  (let ((condition
-          (test-signals mcp-protocol-error
-            (json-decode "{\"first\":1} {\"second\":2}"))))
-    (test-assert
-     (search "Unexpected text follows"
-             (mcp-error-message condition)))))
-
 (define-test json-rejects-documents-over-the-configured-limit
   (let ((condition
           (test-signals mcp-message-too-large
@@ -652,94 +642,7 @@
     (test-equal 64 (mcp-message-too-large-limit condition))
     (test-equal "test JSON input"
                 (mcp-message-too-large-source condition)
-                :test #'string=)))
-
-(define-test json-preflights-adversarial-depth-and-node-count
-  (let ((deep
-          (concatenate
-           'string
-           (make-string 100000 :initial-element #\[)
-           (make-string 100000 :initial-element #\])))
-        (wide
-          (with-output-to-string (stream)
-            (write-char #\[ stream)
-            (loop repeat 200000
-                  for first-p = t then nil
-                  unless first-p
-                    do (write-char #\, stream)
-                  do (write-char #\0 stream))
-            (write-char #\] stream))))
-    (test-assert
-     (< (length deep) *mcp-maximum-message-characters*))
-    (test-assert
-     (< (length wide) *mcp-maximum-message-characters*))
-    (let ((*json-maximum-depth* 32))
-      (let ((condition
-              (test-signals mcp-protocol-error
-                (json-decode deep))))
-        (test-assert
-         (search "nesting depth" (mcp-error-message condition)))))
-    (let ((*json-maximum-nodes* 64))
-      (let ((condition
-              (test-signals mcp-protocol-error
-                (json-decode wide))))
-        (test-assert
-         (search "node count" (mcp-error-message condition)))))))
-
-(define-test json-validates-decoded-container-and-string-bounds
-  (let ((*json-maximum-array-elements* 2))
-    (let ((condition
-            (test-signals mcp-protocol-error
-              (json-decode "[0,1,2]"))))
-      (test-assert
-       (search "elements in one array"
-               (mcp-error-message condition)))))
-  (let ((*json-maximum-object-members* 2))
-    (let ((condition
-            (test-signals mcp-protocol-error
-              (json-decode "{\"a\":1,\"b\":2,\"c\":3}"))))
-      (test-assert
-       (search "members in one object"
-               (mcp-error-message condition)))))
-  (let ((*json-maximum-aggregate-string-characters* 4))
-    (let ((condition
-            (test-signals mcp-protocol-error
-              (json-decode "[\"abc\",\"de\"]"))))
-      (test-assert
-       (search "aggregate string characters"
-               (mcp-error-message condition)))))
-  (let ((*json-maximum-object-key-characters* 4))
-    (let ((condition
-            (test-signals mcp-protocol-error
-              (json-decode "{\"abcde\":0}"))))
-      (test-assert
-       (search "characters in one object key"
-               (mcp-error-message condition))))))
-
-(define-test json-validates-programmatic-values-before-encoding
-  (let ((deep 0))
-    (loop repeat 100000
-          do (setf deep (vector deep)))
-    (let ((*json-maximum-depth* 32))
-      (let ((condition
-              (test-signals mcp-protocol-error
-                (json-encode deep))))
-        (test-assert
-         (search "nesting depth" (mcp-error-message condition))))))
-  (let ((cycle (make-array 1)))
-    (setf (aref cycle 0) cycle)
-    (let ((condition
-            (test-signals mcp-protocol-error
-              (json-encode cycle))))
-      (test-assert
-       (search "cyclic JSON array"
-               (mcp-error-message condition)))))
-  (let ((condition
-          (test-signals mcp-protocol-error
-            (json-encode (ash 1 100000)))))
-    (test-assert
-     (search "characters in one number"
-             (mcp-error-message condition))))
+                :test #'string=))
   (let ((condition
           (test-signals mcp-message-too-large
             (json-encode
@@ -751,6 +654,48 @@
                 (mcp-message-too-large-source condition)
                 :test #'string=)))
 
+(define-test json-reports-codec-failures-as-protocol-errors
+  (let ((deep-source
+          (concatenate
+           'string
+           (make-string 100000 :initial-element #\[)
+           (make-string 100000 :initial-element #\])))
+        (deep-value 0)
+        (cycle (make-array 1)))
+    (loop repeat 100000
+          do (setf deep-value (vector deep-value)))
+    (setf (aref cycle 0) cycle)
+    (dolist (case (list (list "trailing documents"
+                              (lambda () (json-decode "{\"a\":1} {\"b\":2}")))
+                        (list "a trailing comma"
+                              (lambda () (json-decode "[1,]")))
+                        (list "deep documents"
+                              (lambda () (json-decode deep-source)))
+                        (list "deep programmatic values"
+                              (lambda () (json-encode deep-value)))
+                        (list "cyclic programmatic values"
+                              (lambda () (json-encode cycle)))
+                        (list "oversized numbers"
+                              (lambda () (json-encode (ash 1 100000))))
+                        (list "unrepresentable values"
+                              (lambda () (json-encode (json-object "f" #'car))))))
+      (destructuring-bind (description thunk) case
+        (let ((condition (test-signals mcp-protocol-error (funcall thunk))))
+          (test-assert (not (typep condition 'mcp-message-too-large))
+                       description)))))
+  (let ((condition (test-signals mcp-protocol-error (json-decode "[1,]"))))
+    (test-equal "[1,]" (mcp-protocol-error-payload condition)
+                :test #'string=)))
+
+(define-test json-applies-the-configured-structural-limits
+  (let ((*mcp-json-limits* (make-json-limits :maximum-array-elements 2)))
+    (test-equal 2 (length (json-decode "[0,1]")))
+    (let ((condition (test-signals mcp-protocol-error (json-decode "[0,1,2]"))))
+      (test-assert
+       (search "elements in one array" (mcp-error-message condition))))
+    (test-signals mcp-protocol-error
+      (json-encode (vector 0 1 2)))))
+
 (define-test json-rpc-rejects-structurally-invalid-messages
   (dolist
       (message
@@ -758,7 +703,7 @@
         (json-object
          "jsonrpc" "1.0" "id" 1 "result" (json-object))
         (json-object
-         "jsonrpc" "2.0" "id" yason:true "result" (json-object))
+         "jsonrpc" "2.0" "id" t "result" (json-object))
         (json-object
          "jsonrpc" "2.0" "id" 1
          "result" (json-object)
@@ -810,37 +755,13 @@
            "result" (json-object))))
       (attempt response))))
 
-(define-test json-preserves-false-null-and-empty-array
-  (let* ((decoded
-           (json-decode
-            "{\"false\":false,\"null\":null,\"array\":[],\"true\":true}"))
-         (false-value (json-get decoded "false"))
-         (null-value (json-get decoded "null"))
-         (array-value (json-get decoded "array"))
-         (true-value (json-get decoded "true")))
-    (test-assert (eq false-value yason:false))
-    (test-assert (eq null-value :null))
-    (test-assert (vectorp array-value))
-    (test-equal 0 (length array-value))
-    (test-assert (eq true-value yason:true))
-    (test-assert (not (eq false-value null-value)))
-    (test-assert (not (eq false-value array-value)))
-    (test-assert (not (eq null-value array-value)))
-    (test-assert (not (json-true-p false-value)))
-    (test-assert (not (json-true-p null-value)))
-    (test-assert (not (json-true-p array-value)))
-    (test-assert (json-true-p true-value))
-    (test-equal nil (json-sequence->list array-value))
-    (let* ((encoded (json-encode decoded))
-           (roundtrip (json-decode encoded)))
-      (test-assert (eq (json-get roundtrip "false") yason:false))
-      (test-assert (eq (json-get roundtrip "null") :null))
-      (test-assert (vectorp (json-get roundtrip "array")))
-      (test-assert (eq (json-get roundtrip "true") yason:true)))
-    (dolist (not-an-array
-             (list nil :null yason:false (list "not" "an" "array")))
-      (test-signals mcp-protocol-error
-        (json-sequence->list not-an-array)))))
+(define-test json-sequences-require-arrays
+  (test-equal '(1 2) (json-sequence->list (json-decode "[1,2]")))
+  (test-equal nil (json-sequence->list (json-decode "[]")))
+  (dolist (not-an-array
+           (list nil :null (json-false) (list "not" "an" "array")))
+    (test-signals mcp-protocol-error
+      (json-sequence->list not-an-array))))
 
 (define-test tool-annotations-require-exact-json-true
   (labels ((tool-with (value)
@@ -854,14 +775,14 @@
                (json-object
                 "readOnlyHint" value
                 "destructiveHint" value)))))
-    (let ((tool (tool-with yason:false)))
+    (let ((tool (tool-with (json-false))))
       (test-assert (not (mcp-tool-read-only-p tool)))
       (test-assert (not (mcp-tool-destructive-p tool))))
-    (let ((tool (tool-with yason:true)))
+    (let ((tool (tool-with t)))
       (test-assert (mcp-tool-read-only-p tool))
       (test-assert (mcp-tool-destructive-p tool)))
     (dolist (invalid-value
-             (list nil t 0 1 "true" :true :null))
+             (list nil 0 1 "true" :true :null))
       (test-signals mcp-protocol-error
         (tool-with invalid-value)))))
 
@@ -931,7 +852,7 @@
        (string= task-support "required")
        (mcp-tool-task-required-p tool))))
   (dolist (invalid-execution
-           (list nil :null yason:false #() "required"))
+           (list nil :null (json-false) #() "required"))
     (test-signals mcp-protocol-error
       (test-tool
        "invalid-execution"
@@ -939,7 +860,7 @@
   (dolist (invalid-task-support
            (list nil
                  :null
-                 yason:false
+                 (json-false)
                  #()
                  7
                  "Required"
@@ -1053,7 +974,7 @@
                   request
                   (json-object
                    "content" #()
-                   "isError" t)))))
+                   "isError" "true")))))
     (let* ((transport (make-test-scripted-transport #'handler))
            (client (make-mcp-client transport)))
       (unwind-protect
@@ -2002,7 +1923,7 @@
                   200
                   (list (cons "Content-Type" "application/json"))
                   (test-json-response-body
-                   message (json-object "ok" yason:true)))))
+                   message (json-object "ok" t)))))
 
              (scope-function (function)
                "Require parsed response data before leaving the scope."
@@ -2129,7 +2050,7 @@
                    (test-sse-resume-body
                     "scope-resume-two"
                     1
-                    (test-rpc-result request (json-object "done" yason:true)))))
+                    (test-rpc-result request (json-object "done" t)))))
                  (t
                   (error "Unexpected exchange-scope request method."))))
 
