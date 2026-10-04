@@ -186,3 +186,47 @@ server rather than reentering manager operations.
 #+END_SRC
 
 Part of the [[https://www.lambda-symbolics.com/libraries][Lambda Symbolics library shelf]].
+
+* Declarative transport configuration
+
+Applications that store MCP server definitions can validate and detach a
+configuration without starting a process or reading the environment. Use
+=mcp-read-transport-configuration= with a plist whose =:type= is =:stdio= or
+=:http=.
+
+#+begin_src lisp
+(mcp-read-transport-configuration
+ '(:type :stdio
+   :command "/usr/local/bin/example-mcp"
+   :arguments ("--stdio")
+   :directory :workspace
+   :environment (("API_TOKEN" :environment "EXAMPLE_API_TOKEN")))
+ :default-directory "/srv/example")
+
+(mcp-read-transport-configuration
+ '(:type :http
+   :url "https://example.test/mcp"
+   :headers (("Authorization" :environment "EXAMPLE_TOKEN"))
+   :connect-timeout-seconds 15))
+#+end_src
+
+The reader returns an =mcp-stdio-transport-configuration= or
+=mcp-http-transport-configuration=. Stdio values are available through
+=mcp-stdio-configuration-command=, =mcp-stdio-configuration-arguments=,
+=mcp-stdio-configuration-directory=, and
+=mcp-stdio-configuration-environment-bindings=. HTTP values are available
+through =mcp-http-configuration-url=,
+=mcp-http-configuration-header-bindings=, and
+=mcp-http-configuration-connect-timeout-seconds=. Bindings use
+=mcp-environment-binding-target= and =mcp-environment-binding-source=.
+
+The reader accepts only bounded ASCII environment names and validates the URL
+scheme and authority. HTTPS accepts valid DNS and IP authorities. HTTP is
+limited to localhost and loopback IP authorities. Credential-bearing URLs,
+reserved MCP headers, duplicate names, unknown plist keys, malformed lists,
+and values outside the transport bounds signal =mcp-configuration-error=.
+
+When =:directory= is omitted, =:default-directory= defaults to =:workspace=.
+An explicit =:workspace= value is retained for the caller to resolve. Transport
+limits are exported reloadable parameters. The reader accepts a default HTTP
+connection timeout and a maximum timeout through keyword arguments.

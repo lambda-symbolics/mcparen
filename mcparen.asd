@@ -7,6 +7,7 @@
   :depends-on (#:argo
                #:bordeaux-threads
                #:dexador
+               #:quri
                #:ls-compat
                #:ls-compat/posix
                #:serapeum)
@@ -15,6 +16,7 @@
                 :components ((:file "package")
                              (:file "mcp-conditions")
                              (:file "json")
+                             (:file "mcp-configuration")
                              (:file "mcp-transport")
                              (:file "mcp-http")
                              (:file "mcp-stdio")
@@ -38,6 +40,7 @@
   :components ((:module "tests"
                 :serial t
                 :components ((:file "test-support")
+                             (:file "configuration-tests")
                              (:file "mcp-tests")
                              (:file "managed-tests")
                              (:file "tests"))))
