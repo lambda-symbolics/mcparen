@@ -230,3 +230,27 @@ When =:directory= is omitted, =:default-directory= defaults to =:workspace=.
 An explicit =:workspace= value is retained for the caller to resolve. Transport
 limits are exported reloadable parameters. The reader accepts a default HTTP
 connection timeout and a maximum timeout through keyword arguments.
+
+* Input schema normalization
+
+=mcp-validate-input-schema= validates and detaches a JSON-compatible MCP input
+schema. It returns two values: the normalized hash table and its compact UTF-8
+byte count. Missing =type= defaults to ="object"= and missing
+=properties= defaults to an empty object. An object-containing type union is
+accepted. Present =properties= and =required= values are checked for their
+required JSON shapes. JSON false, null, and annotation members are preserved.
+
+#+begin_src lisp
+(multiple-value-bind (schema bytes)
+    (mcp-validate-input-schema
+     (json-object "type" "object"
+                  "properties"
+                  (json-object "name" (json-object "type" "string"))))
+  (format t "~D bytes~%" bytes)
+  schema)
+#+end_src
+
+The original value and normalized value are checked against the supplied byte,
+depth, node, string, and key limits. Cycles, unrepresentable Lisp values, and
+limit violations signal =mcp-input-schema-error=, whose =reason= and =value=
+readers identify the failure.

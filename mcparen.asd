@@ -5,6 +5,7 @@
   :version "0.1.0"
   :serial t
   :depends-on (#:argo
+               #:babel
                #:bordeaux-threads
                #:dexador
                #:quri
@@ -17,6 +18,7 @@
                              (:file "mcp-conditions")
                              (:file "json")
                              (:file "mcp-configuration")
+                             (:file "mcp-schema")
                              (:file "mcp-transport")
                              (:file "mcp-http")
                              (:file "mcp-stdio")
@@ -41,6 +43,7 @@
                 :serial t
                 :components ((:file "test-support")
                              (:file "configuration-tests")
+                             (:file "schema-tests")
                              (:file "mcp-tests")
                              (:file "managed-tests")
                              (:file "tests"))))

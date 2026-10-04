@@ -14,6 +14,7 @@
                 #:thread-alive-p
                 #:with-lock-held)
   (:import-from #:serapeum #:->)
+  (:import-from #:babel #:string-to-octets)
   (:import-from #:quri
                 #:ip-addr-p #:ip-addr= #:ipv4-addr-p #:ipv6-addr-p
                 #:uri #:uri-host #:uri-port #:uri-scheme #:uri-userinfo)
@@ -235,6 +236,10 @@
            #:*mcp-http-url-maximum-characters*
            #:*mcp-http-header-name-maximum-characters*
            #:*mcp-http-maximum-header-bindings*
+           #:mcp-input-schema-error
+           #:mcp-input-schema-error-reason
+           #:mcp-input-schema-error-value
+           #:mcp-validate-input-schema
            #:mcp-server-runtime-tool-schema-bytes
            #:mcp-server-runtime-manager
            #:mcp-server-runtime-launch-environment-fingerprint
