@@ -222,7 +222,7 @@ through =mcp-http-configuration-url=,
 
 The reader accepts only bounded ASCII environment names and validates the URL
 scheme and authority. HTTPS accepts valid DNS and IP authorities. HTTP is
-limited to localhost and loopback IP authorities. Credential-bearing URLs,
+limited to localhost and loopback IP authorities. Password-bearing authorities,
 reserved MCP headers, duplicate names, unknown plist keys, malformed lists,
 and values outside the transport bounds signal =mcp-configuration-error=.
 

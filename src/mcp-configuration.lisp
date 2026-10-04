@@ -416,8 +416,7 @@ control characters are rejected even when the native reader accepted them."
           (host (uri-host uri))
           (port (uri-port uri)))
      (unless
-         (and (null (uri-userinfo uri))
-              (member scheme '("http" "https") :test #'string-equal)
+         (and (member scheme '("http" "https") :test #'string-equal)
               (mcp-configuration--url-authority-port-syntax-p url) (stringp host)
               (mcp-configuration--http-host-p host) (integerp port) (<= 1 port 65535))
        (mcp-configuration--error

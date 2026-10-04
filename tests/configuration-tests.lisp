@@ -81,6 +81,7 @@
 
 (define-test configuration-rejects-invalid-http-authorities
   (dolist (url '("http://user:secret@example.com/mcp"
+                 "https://user:secret@example.com/mcp"
                  "http://127.0.0.999/mcp"
                  "http://127.0.0.1:0/mcp"
                  "http://127.0.0.1:65536/mcp"
@@ -92,6 +93,7 @@
 
 (define-test configuration-accepts-supported-http-authorities
   (dolist (url '("https://example.com/mcp"
+                 "https://user@example.com/mcp"
                  "https://[::1]:443/mcp"
                  "http://localhost/mcp"
                  "http://127.0.0.1:8080/mcp"

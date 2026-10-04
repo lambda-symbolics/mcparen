@@ -17,7 +17,7 @@
   (:import-from #:babel #:string-to-octets)
   (:import-from #:quri
                 #:ip-addr-p #:ip-addr= #:ipv4-addr-p #:ipv6-addr-p
-                #:uri #:uri-host #:uri-port #:uri-scheme #:uri-userinfo)
+                #:uri #:uri-host #:uri-port #:uri-scheme)
   (:import-from #:argo
                 #:*json-strict-limits*
                 #:json-encode-utf8
