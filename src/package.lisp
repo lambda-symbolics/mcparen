@@ -1,6 +1,7 @@
 
 
 (defpackage #:mcparen
+  (:documentation "A Model Context Protocol client over standard I/O and Streamable HTTP, with managed connections.")
   (:use #:cl)
   (:import-from #:bordeaux-threads
                 #:condition-notify
