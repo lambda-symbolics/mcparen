@@ -51,17 +51,18 @@
 (defun mcp-server-runtime-snapshot (server)
   "Capture a detached, synchronized discovery observation without network work."
   (with-lock-held ((mcp-server-runtime-lock server))
-    (mcp-discovery-snapshot--create :name (copy-seq (mcp-server-runtime-name server))
-     :state (mcp-server-runtime-state server) :generation
-     (mcp-server-runtime-observed-connection-generation server) :revision
-     (mcp-server-runtime-tools-revision server) :requested-version
-     (with-lock-held ((mcp-server-runtime-tools-change-lock server))
-       (mcp-server-runtime-tools-change-version server))
-     :discovered-version                  (mcp-server-runtime-tools-discovered-version server)
-     :capabilities                        (mcp-managed--copy-value (mcp-server-runtime-capabilities server))
-     :tools (mcp-managed--copy-value (mcp-server-runtime-tools server)) :schema-bytes
-     (mcp-server-runtime-tool-schema-bytes server) :diagnostic
-     (mcp-managed--copy-value (mcp-server-runtime-failure server)))))
+    (mcp-discovery-snapshot--create
+     :name               (copy-seq (mcp-server-runtime-name server))
+     :state              (mcp-server-runtime-state server)
+     :generation         (mcp-server-runtime-observed-connection-generation server)
+     :revision           (mcp-server-runtime-tools-revision server)
+     :requested-version  (with-lock-held ((mcp-server-runtime-tools-change-lock server))
+                           (mcp-server-runtime-tools-change-version server))
+     :discovered-version (mcp-server-runtime-tools-discovered-version server)
+     :capabilities       (mcp-managed--copy-value (mcp-server-runtime-capabilities server))
+     :tools              (mcp-managed--copy-value (mcp-server-runtime-tools server))
+     :schema-bytes       (mcp-server-runtime-tool-schema-bytes server)
+     :diagnostic         (mcp-managed--copy-value (mcp-server-runtime-failure server)))))
 
 (defun mcp-manager-snapshot (manager)
   "Capture every server in presentation order under the manager discovery lock."
