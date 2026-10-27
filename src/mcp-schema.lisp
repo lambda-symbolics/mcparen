@@ -9,7 +9,7 @@
           :documentation "The offending member, when useful."))
   (:documentation "An MCP tool input schema cannot be projected within its bounds."))
 
-(-> mcp-schema--error (keyword &optional t) null)
+(-> mcp-schema--error (keyword &optional t) nil)
 (defun mcp-schema--error (reason &optional value)
   "Signal a typed input schema failure for REASON and VALUE."
   (error 'mcp-input-schema-error
