@@ -384,10 +384,10 @@ interprets it for protocol revisions that define task-augmented requests.")
   nil)
 
 (-> mcp-client--request-with-identifier
-    (mcp-client string t real t)
+    (mcp-client string &key (:params t) (:timeout real) (:identifier t))
     t)
 (defun mcp-client--request-with-identifier
-    (client method params timeout identifier)
+    (client method &key params timeout identifier)
   "Send METHOD with PARAMS and preallocated IDENTIFIER."
   (let ((request (json-object
                    "jsonrpc" "2.0"
@@ -416,12 +416,12 @@ interprets it for protocol revisions that define task-augmented requests.")
            (mcp-client--request-with-identifier
             client
             "initialize"
-            (json-object
-             "protocolVersion" requested-version
-             "capabilities" (mcp-client-client-capabilities client)
-             "clientInfo" (mcp-client-client-info client))
-            (mcp-client-startup-timeout client)
-            identifier)))
+            :params     (json-object
+                         "protocolVersion" requested-version
+                         "capabilities" (mcp-client-client-capabilities client)
+                         "clientInfo" (mcp-client-client-info client))
+            :timeout    (mcp-client-startup-timeout client)
+            :identifier identifier)))
     (unless (hash-table-p result)
       (error 'mcp-protocol-error
              :message "The MCP initialize result is not an object."
@@ -537,11 +537,10 @@ interprets it for protocol revisions that define task-augmented requests.")
        (mcp-client-close ,variable))))
 
 (-> mcp-client--request
-    (mcp-client string &optional t real)
+    (mcp-client string &key (:params t) (:timeout real))
     t)
 (defun mcp-client--request
-    (client method &optional params
-     (timeout (mcp-client-startup-timeout client)))
+    (client method &key params (timeout (mcp-client-startup-timeout client)))
   "Connect CLIENT and send one request, allowing concurrent operations."
   (mcp-client-connect client)
   (multiple-value-bind (identifier generation)
@@ -549,8 +548,10 @@ interprets it for protocol revisions that define task-augmented requests.")
         (values (mcp-client--next-identifier-unlocked client)
                 (mcp-client--connection-generation client)))
     (handler-case
-        (mcp-client--request-with-identifier
-         client method params timeout identifier)
+        (mcp-client--request-with-identifier client method
+                                             :params     params
+                                             :timeout    timeout
+                                             :identifier identifier)
       (mcp-session-expired ()
         (with-lock-held ((mcp-client-lock client))
           (when (= generation (mcp-client--connection-generation client))
@@ -560,8 +561,10 @@ interprets it for protocol revisions that define task-augmented requests.")
         (let ((retry-identifier
                 (with-lock-held ((mcp-client-lock client))
                   (mcp-client--next-identifier-unlocked client))))
-          (mcp-client--request-with-identifier
-           client method params timeout retry-identifier))))))
+          (mcp-client--request-with-identifier client method
+                                               :params     params
+                                               :timeout    timeout
+                                               :identifier retry-identifier))))))
 
 
 ;;;; -- Server Features --
@@ -676,7 +679,7 @@ SOURCE-NAME names it in any encoding failure."
                  (loop repeat *mcp-pagination-maximum-pages*
                        for params = (and cursor
                                          (json-object "cursor" cursor))
-                       for result = (mcp-client--request client method params)
+                       for result = (mcp-client--request client method :params params)
                        do
                           (unless (= initial-generation (generation))
                             (return-from read-session restart-marker))
@@ -984,10 +987,10 @@ SOURCE-NAME names it in any encoding failure."
           (mcp-client--request
            client
            "tools/call"
-           (json-object
-            "name" (mcp-tool-name tool)
-            "arguments" arguments)
-           timeout)))
+           :params  (json-object
+                     "name" (mcp-tool-name tool)
+                     "arguments" arguments)
+           :timeout timeout)))
     (unless (hash-table-p result)
       (error 'mcp-protocol-error
              :message "tools/call returned a non-object result."
@@ -1045,7 +1048,7 @@ SOURCE-NAME names it in any encoding failure."
   (mcp-client--require-capability client "resources" "resources/read")
   (let ((result
           (mcp-client--request
-           client "resources/read" (json-object "uri" uri))))
+           client "resources/read" :params (json-object "uri" uri))))
     (unless (hash-table-p result)
       (error 'mcp-protocol-error
              :message "resources/read returned a non-object result."
@@ -1068,7 +1071,7 @@ SOURCE-NAME names it in any encoding failure."
   (let ((params (json-object "name" name)))
     (when arguments
       (setf (gethash "arguments" params) arguments))
-    (let ((result (mcp-client--request client "prompts/get" params)))
+    (let ((result (mcp-client--request client "prompts/get" :params params)))
       (unless (hash-table-p result)
         (error 'mcp-protocol-error
                :message "prompts/get returned a non-object result."
