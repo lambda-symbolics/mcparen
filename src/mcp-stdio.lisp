@@ -363,10 +363,11 @@ method-not-found response. The function must be bounded and thread-safe."
       cause)))
 
 (-> mcp-stdio--write-message
-    (mcp-stdio-transport hash-table integer real string)
+    (mcp-stdio-transport hash-table
+     &key (:deadline integer) (:timeout real) (:operation string))
     null)
 (defun mcp-stdio--write-message
-    (transport message deadline timeout operation)
+    (transport message &key deadline timeout operation)
   "Write MESSAGE before DEADLINE or close TRANSPORT and signal a timeout."
   (let ((remaining (mcp-stdio--remaining-seconds deadline)))
     (unless (plusp remaining)
@@ -412,9 +413,9 @@ method-not-found response. The function must be bounded and thread-safe."
                :cause     cause))))
   nil)
 
-(-> mcp-stdio--server-error-response (t integer string &optional t) hash-table)
+(-> mcp-stdio--server-error-response (t integer string &key (:data t)) hash-table)
 (defun mcp-stdio--server-error-response
-    (identifier code message &optional data)
+    (identifier code message &key data)
   "Return one JSON-RPC error response to a server-originated request."
   (let ((error-object
           (json-object
@@ -514,18 +515,18 @@ method-not-found response. The function must be bounded and thread-safe."
                     identifier
                     (mcp-rpc-error-code cause)
                     (mcp-error-message cause)
-                    (mcp-rpc-error-data cause)))
+                    :data (mcp-rpc-error-data cause)))
                  (error (cause)
                    (mcp-stdio--server-error-response
                     identifier -32603
                     "The MCP client request handler failed."
-                    (bounded-diagnostic cause :limit 512))))))
+                    :data (bounded-diagnostic cause :limit 512))))))
          (handler-case
              (mcp-stdio--write-message
               transport response
-              (mcp-stdio--deadline *mcp-stdio-callback-write-timeout*)
-              *mcp-stdio-callback-write-timeout*
-              "MCP stdio server response")
+              :deadline  (mcp-stdio--deadline *mcp-stdio-callback-write-timeout*)
+              :timeout   *mcp-stdio-callback-write-timeout*
+              :operation "MCP stdio server response")
            (error (response-cause)
              (mcp-stdio--record-reader-failure
               transport response-cause))))))
@@ -580,9 +581,9 @@ method-not-found response. The function must be bounded and thread-safe."
              (json-get message "id")
              -32601
              "The MCP client filtered this server request.")
-            (mcp-stdio--deadline *mcp-stdio-callback-write-timeout*)
-            *mcp-stdio-callback-write-timeout*
-            "MCP stdio filtered server response"))))
+            :deadline  (mcp-stdio--deadline *mcp-stdio-callback-write-timeout*)
+            :timeout   *mcp-stdio-callback-write-timeout*
+            :operation "MCP stdio filtered server response"))))
     (:notification
      (let ((projected
              (mcp-stdio--project-message
@@ -830,10 +831,11 @@ method-not-found response. The function must be bounded and thread-safe."
             nil))))))
 
 (-> mcp-stdio--take-response
-    (mcp-stdio-transport t mcp-stdio-pending-request integer real)
+    (mcp-stdio-transport t mcp-stdio-pending-request
+     &key (:deadline integer) (:timeout real))
     hash-table)
 (defun mcp-stdio--take-response
-    (transport identifier pending deadline timeout)
+    (transport identifier pending &key deadline timeout)
   "Wait for and remove IDENTIFIER's response before DEADLINE."
   (with-lock-held ((mcp-stdio-transport-state-lock transport))
     (loop
@@ -900,10 +902,13 @@ method-not-found response. The function must be bounded and thread-safe."
       (let ((deadline (mcp-stdio--deadline timeout)))
         (unwind-protect
              (progn
-               (mcp-stdio--write-message
-                transport request deadline timeout "JSON-RPC request")
-               (mcp-stdio--take-response
-                transport identifier pending deadline timeout))
+               (mcp-stdio--write-message transport request
+                                         :deadline  deadline
+                                         :timeout   timeout
+                                         :operation "JSON-RPC request")
+               (mcp-stdio--take-response transport identifier pending
+                                         :deadline deadline
+                                         :timeout  timeout))
           (with-lock-held ((mcp-stdio-transport-state-lock transport))
             (remhash
              identifier
@@ -919,9 +924,9 @@ method-not-found response. The function must be bounded and thread-safe."
            :cause     nil))
   (mcp-stdio--write-message
    transport notification
-   (mcp-stdio--deadline timeout)
-   timeout
-   "JSON-RPC notification")
+   :deadline  (mcp-stdio--deadline timeout)
+   :timeout   timeout
+   :operation "JSON-RPC notification")
   nil)
 
 (-> mcp-stdio--close-stream (t) null)
