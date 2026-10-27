@@ -129,5 +129,6 @@ Close all previously returned servers if a later factory or initialization fails
                                 manager-initargs))
            (mcp-manager-start manager))
       (unless manager
+        ; mallet:suppress no-ignore-errors -- closing the built servers must not mask the original failure
         (ignore-errors
           (mcp-manager--close-runtimes servers #'mcp-server-runtime-close))))))
