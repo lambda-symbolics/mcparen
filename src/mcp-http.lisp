@@ -380,12 +380,13 @@ returned values. The default calls the thunk without adding a scope."
 (defun mcp-http--timeout-condition-p (condition)
   "Return true when CONDITION represents a local network or runtime timeout."
   (labels ((named-type-p (package-name type-name)
-             "Test CONDITION against TYPE-NAME when its package is present."
+             "Test CONDITION against TYPE-NAME when its package and class are present."
              (let* ((package (find-package package-name))
                     (symbol  (and package
                                   (find-symbol type-name package))))
                (and symbol
-                    (ignore-errors (typep condition symbol))))))
+                    (find-class symbol nil)
+                    (typep condition symbol)))))
     (or (typep condition 'ls-compat:timeout-expired)
         (named-type-p "SB-SYS" "IO-TIMEOUT")
         (named-type-p "USOCKET" "TIMEOUT-ERROR")
