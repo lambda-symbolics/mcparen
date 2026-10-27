@@ -64,6 +64,7 @@
 (defgeneric mcp-managed-cached-error (server)
   (:documentation "Reconstruct a structured failure from SERVER's retained diagnostic."))
 
+(-> mcp-managed--bounded-string (string &key (:limit (integer 0))) string)
 (defun mcp-managed--bounded-string (value &key (limit 1000))
   "Return at most LIMIT characters from VALUE."
   (subseq value 0 (min limit (length value))))
@@ -573,12 +574,14 @@ The caller must hold RUNTIME's lock."
                   :required-p  (mcp-managed-required-p server)
                   :message     (or (mcp-server-runtime-failure server) "MCP server unavailable.")))
 
+(-> mcp-server-runtime--cached-failure (mcp-managed-server) (or null condition))
 (defun mcp-server-runtime--cached-failure (runtime)
   "Return the last failure without repeating network or credential work."
   (with-lock-held ((mcp-server-runtime-lock runtime))
     (when (eq (mcp-server-runtime-state runtime) :failed)
       (mcp-managed-cached-error runtime))))
 
+(-> mcp-managed-schema-limit (mcp-managed-server) (integer 0))
 (defun mcp-managed-schema-limit (server)
   "Return SERVER's owning manager budget, or the dynamic default."
   (let ((manager (mcp-server-runtime-manager server)))
@@ -605,6 +608,7 @@ The caller must hold RUNTIME's lock."
                                   :limit     (mcp-managed-schema-limit server))))
     (values tools bytes)))
 
+(-> mcp-manager-start (mcp-connection-manager) mcp-connection-manager)
 (defun mcp-manager-start (manager)
   "Discover MANAGER; close every allocated client on incomplete startup."
   (let ((complete-p nil))
@@ -618,6 +622,7 @@ The caller must hold RUNTIME's lock."
         (handler-case (mcp-manager-close manager)
           (serious-condition () nil))))))
 
+(-> mcp-manager-refresh (mcp-connection-manager &key (:server-name (or null string))) boolean)
 (defun mcp-manager-refresh (manager &key server-name)
   "Request rediscovery of every server or SERVER-NAME, then publish complete results."
   (let ((target (and server-name (mcp-manager-runtime manager server-name))))
@@ -629,6 +634,7 @@ The caller must hold RUNTIME's lock."
       (mcp-manager--connect-runtimes manager :target-runtime target
                                    :signal-target-failure-p  (not (null target))))))
 
+(-> mcp-manager-tool-revisions (mcp-connection-manager) list)
 (defun mcp-manager-tool-revisions (manager)
   "Return synchronized discovery revisions in presentation order."
   (mapcar (lambda (server)
@@ -644,6 +650,7 @@ Callers supply the identity of the exact credential snapshot active in the use s
   "Return no persistent credential identity by default."
   (values nil nil))
 
+(-> mcp-managed-check-credential-identity (mcp-managed-server) null)
 (defun mcp-managed-check-credential-identity (server)
   "Discard a live connection after credential rotation or failed resolution.
 The caller holds the server lock inside its credential use scope."

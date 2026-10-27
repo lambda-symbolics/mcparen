@@ -2,6 +2,10 @@
 
 ;;;; -- Managed Connection Fixtures --
 
+(-> test-managed-server
+    (string &key (:required-p boolean) (:tools-function (or null function))
+                 (:server-class symbol) (:initargs list))
+    (values mcp-managed-server hash-table))
 (defun test-managed-server (name &key required-p tools-function
                                      (server-class 'mcp-managed-server) initargs)
   "Return a managed scripted server and its request counters as two values."

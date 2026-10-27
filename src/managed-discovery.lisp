@@ -15,6 +15,7 @@
   (schema-bytes 0 :read-only t)
   (diagnostic nil :read-only t))
 
+(-> mcp-managed--copy-value (t) t)
 (defun mcp-managed--copy-value (value)
   "Detach protocol metadata so snapshot consumers cannot mutate retained discovery."
   (typecase value
@@ -48,6 +49,7 @@
     (t
      value)))
 
+(-> mcp-server-runtime-snapshot (mcp-managed-server) mcp-discovery-snapshot)
 (defun mcp-server-runtime-snapshot (server)
   "Capture a detached, synchronized discovery observation without network work."
   (with-lock-held ((mcp-server-runtime-lock server))
@@ -64,6 +66,7 @@
      :schema-bytes       (mcp-server-runtime-tool-schema-bytes server)
      :diagnostic         (mcp-managed--copy-value (mcp-server-runtime-failure server)))))
 
+(-> mcp-manager-snapshot (mcp-connection-manager) list)
 (defun mcp-manager-snapshot (manager)
   "Capture every server in presentation order under the manager discovery lock."
   (with-lock-held ((mcp-manager-lock manager))
@@ -76,6 +79,11 @@
   "Return detached protocol items."
   (mcp-managed--copy-value items))
 
+(-> mcp-manager-collect
+    (mcp-connection-manager &key (:server-name (or null string))
+                                 (:list-function (or function symbol))
+                                 (:item-key (or null function symbol)))
+    (values list list))
 (defun mcp-manager-collect (manager &key server-name list-function item-key)
   "Return successes and failures as (SERVER . VALUE) lists in presentation order.
 LIST-FUNCTION receives a connected client. ITEM-KEY optionally identifies items;
@@ -108,6 +116,7 @@ never suppress another server's results. Returned diagnostics are scope-projecte
           (push (cons server (mcp-managed-failure server condition)) failures))))
     (values (nreverse successes) (nreverse failures))))
 
+(-> mcp-server-runtime-cancel (mcp-managed-server) null)
 (defun mcp-server-runtime-cancel (server)
   "Cancel in-flight transport requests, then leave SERVER disconnected and restartable."
   (unwind-protect
@@ -116,6 +125,8 @@ never suppress another server's results. Returned diagnostics are scope-projecte
                  (mcp-transport-close (mcp-client-transport (mcp-server-runtime-client server)))))
     (mcp-server-runtime-close server)))
 
+(-> mcp-manager-build (list &key (:manager-class symbol) (:manager-initargs list))
+    mcp-connection-manager)
 (defun mcp-manager-build (server-factories &key (manager-class 'mcp-connection-manager)
                                              manager-initargs)
   "Build and start a manager from zero-argument SERVER-FACTORIES.
