@@ -275,12 +275,13 @@ control characters are rejected even when the native reader accepted them."
       (mcp-configuration--error
        "An MCP stdio directory must be :WORKSPACE or a bounded non-empty string."
        :field ':directory))
-    (make-instance 'mcp-stdio-transport-configuration :command (copy-seq command)
-                   :arguments (mapcar #'copy-seq arguments) :directory
-                   (if (stringp directory)
-                       (copy-seq directory)
-                       directory)
-                   :environment-bindings                       (mcp-configuration--bindings environment))))
+    (make-instance 'mcp-stdio-transport-configuration
+                   :command              (copy-seq command)
+                   :arguments            (mapcar #'copy-seq arguments)
+                   :directory            (if (stringp directory)
+                                             (copy-seq directory)
+                                             directory)
+                   :environment-bindings (mcp-configuration--bindings environment))))
 
 (-> mcp-configuration--split-string (string character) list)
 (defun mcp-configuration--split-string (value separator)
@@ -427,11 +428,12 @@ control characters are rejected even when the native reader accepted them."
               (mcp-configuration--property form :connect-timeout-seconds)
               default-connect-timeout-seconds)))
     (mcp-configuration--validate-http-url url)
-    (make-instance 'mcp-http-transport-configuration :url (copy-seq url)
-                   :header-bindings                       (mcp-configuration--bindings headers :header-p t)
-                   :connect-timeout-seconds
-                   (mcp-configuration--positive-timeout connect-timeout
-                                                        :connect-timeout-seconds))))
+    (make-instance 'mcp-http-transport-configuration
+                   :url                     (copy-seq url)
+                   :header-bindings         (mcp-configuration--bindings headers :header-p t)
+                   :connect-timeout-seconds (mcp-configuration--positive-timeout
+                                             connect-timeout
+                                             :connect-timeout-seconds))))
 
 (-> mcp-read-transport-configuration
     (t &key (:default-directory t) (:default-connect-timeout-seconds t)

@@ -422,10 +422,11 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
               (let ((schema-bytes (mcp-server-runtime--budget-usage runtime))
                     (limit        (mcp-managed-schema-limit runtime)))
                 (when (> (+ allocated-schema-bytes schema-bytes) limit)
-                  (mcp-managed-budget-error
-                   runtime :resource ':input-schema-bytes
-                   :allocated allocated-schema-bytes :requested schema-bytes
-                   :limit            limit))
+                  (mcp-managed-budget-error runtime
+                                            :resource  ':input-schema-bytes
+                                            :allocated allocated-schema-bytes
+                                            :requested schema-bytes
+                                            :limit     limit))
                 (incf allocated-schema-bytes schema-bytes)))
           (mcp-managed-server-error (condition)
             (when (mcp-server-runtime--mark-failed runtime condition)
@@ -444,8 +445,9 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
     (if manager
         (with-lock-held ((mcp-manager-lock manager))
           (values runtime
-                  (mcp-manager--connect-runtimes manager :target-runtime runtime
-                   :signal-target-failure-p                              t)))
+                  (mcp-manager--connect-runtimes manager
+                                                 :target-runtime          runtime
+                                                 :signal-target-failure-p t)))
         (let ((cached-failure (mcp-server-runtime--cached-failure runtime)))
           (if (and cached-failure (not (mcp-server-runtime-tools-stale-p runtime)))
               (error cached-failure)
@@ -596,9 +598,11 @@ The caller must hold RUNTIME's lock."
       (incf bytes (length (babel:string-to-octets (json-encode (mcp-tool-input-schema tool))
                                                :encoding :utf-8)))
       (when (> (+ allocated-schema-bytes bytes) (mcp-managed-schema-limit server))
-        (mcp-managed-budget-error server :resource ':input-schema-bytes
-                                 :allocated allocated-schema-bytes :requested bytes
-                                 :limit            (mcp-managed-schema-limit server))))
+        (mcp-managed-budget-error server
+                                  :resource  ':input-schema-bytes
+                                  :allocated allocated-schema-bytes
+                                  :requested bytes
+                                  :limit     (mcp-managed-schema-limit server))))
     (values tools bytes)))
 
 (defun mcp-manager-start (manager)

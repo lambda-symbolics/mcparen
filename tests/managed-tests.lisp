@@ -163,10 +163,12 @@
 
 (define-test managed-required-failure-isolation-and-retry
   (let* ((fail-p   nil)
-         (required (test-managed-server "required" :required-p t
-                      :tools-function                          (lambda ()
-                                                                 (when fail-p (error "Injected discovery failure."))
-                                                                 (list (test-tool "required")))))
+         (required (test-managed-server
+                    "required"
+                    :required-p     t
+                    :tools-function (lambda ()
+                                      (when fail-p (error "Injected discovery failure."))
+                                      (list (test-tool "required")))))
          (healthy  (test-managed-server "healthy"))
          (manager  (make-instance 'mcp-connection-manager :runtimes (list required healthy))))
     (unwind-protect
@@ -191,8 +193,9 @@
          (required (test-managed-server "required" :required-p t))
          (bytes    (length (babel:string-to-octets (json-encode (mcp-tool-input-schema (test-tool "x")))
                                                   :encoding :utf-8)))
-         (manager  (make-instance 'mcp-connection-manager :runtimes            (list optional required)
-                                                         :maximum-schema-bytes bytes)))
+         (manager  (make-instance 'mcp-connection-manager
+                                  :runtimes             (list optional required)
+                                  :maximum-schema-bytes bytes)))
     (unwind-protect
          (progn
            (mcp-manager-start manager)
@@ -205,14 +208,17 @@
 
 (define-test managed-budget-growth-preempts-cached-optional-server
   (let* ((grow-p   nil)
-         (required (test-managed-server "required" :required-p t
-                      :tools-function                          (lambda () (if grow-p (list (test-tool "one") (test-tool "two"))
-                                                                             (list (test-tool "one"))))))
+         (required (test-managed-server
+                    "required"
+                    :required-p     t
+                    :tools-function (lambda () (if grow-p (list (test-tool "one") (test-tool "two"))
+                                                   (list (test-tool "one"))))))
          (optional (test-managed-server "optional"))
          (bytes    (length (babel:string-to-octets (json-encode (mcp-tool-input-schema (test-tool "x")))
                                                   :encoding :utf-8)))
-         (manager  (make-instance 'mcp-connection-manager :runtimes            (list optional required)
-                                                         :maximum-schema-bytes (* 2 bytes))))
+         (manager  (make-instance 'mcp-connection-manager
+                                  :runtimes             (list optional required)
+                                  :maximum-schema-bytes (* 2 bytes))))
     (unwind-protect
          (progn
            (mcp-manager-start manager)
@@ -242,10 +248,11 @@
              (test-equal (list first second) (mapcar #'first results))
              (test-equal (list duplicate) (mapcar #'first failures)))
            (multiple-value-bind (results failures)
-               (mcp-manager-collect manager :server-name "first"
-                                    :list-function       (lambda (client) (declare (ignore client))
-                                                           '("duplicate" "duplicate"))
-                                    :item-key            #'identity)
+               (mcp-manager-collect manager
+                                    :server-name   "first"
+                                    :list-function (lambda (client) (declare (ignore client))
+                                                     '("duplicate" "duplicate"))
+                                    :item-key      #'identity)
              (test-assert (null results))
              (test-equal (list first) (mapcar #'first failures))))
       (mcp-manager-close manager))))
@@ -273,8 +280,9 @@
          (list (lambda () ready)
                (lambda ()
                  (if (eq failure-kind :factory) (error "Factory failed.")
-                     (test-managed-server "failed" :required-p t
-                       :tools-function                         (lambda () (error "Startup failed."))))))))
+                     (test-managed-server "failed"
+                                          :required-p     t
+                                          :tools-function (lambda () (error "Startup failed."))))))))
       (test-assert (not (mcp-client-connected-p (mcp-server-runtime-client ready))))
       (test-equal :disconnected (mcp-server-runtime-state ready)))))
 
@@ -295,8 +303,9 @@
 
 (define-test managed-cancellation-and-reconnect
   (let* ((transport (make-test-stdio-transport))
-         (server    (make-instance 'mcp-managed-server :name "cancel"
-                                   :client                   (make-mcp-client transport :startup-timeout 3)))
+         (server    (make-instance 'mcp-managed-server
+                                   :name   "cancel"
+                                   :client (make-mcp-client transport :startup-timeout 3)))
          (request   nil))
     (unwind-protect
          (progn
@@ -579,8 +588,9 @@
 
 (define-test managed-stdio-cleanup-with-unavailable-credentials
   (let* ((transport (make-test-stdio-transport))
-         (server    (make-instance 'test-cleanup-managed-server :name "stdio-cleanup"
-                                  :client                             (make-mcp-client transport)))
+         (server    (make-instance 'test-cleanup-managed-server
+                                   :name   "stdio-cleanup"
+                                   :client (make-mcp-client transport)))
          (process   nil))
     (unwind-protect
          (progn
@@ -598,8 +608,9 @@
   (let* ((transport (make-mcp-streamable-http-transport
                      "http://127.0.0.1:9/mcp"
                      :headers-function (lambda () (error "Credentials unavailable."))))
-         (server    (make-instance 'test-cleanup-managed-server :name "http-cleanup"
-                                  :client                             (make-mcp-client transport)))
+         (server    (make-instance 'test-cleanup-managed-server
+                                   :name   "http-cleanup"
+                                   :client (make-mcp-client transport)))
          (listener  nil))
     (unwind-protect
          (progn
