@@ -152,8 +152,8 @@
                "id" (json-get request "id")
                "result" result))
 
-(-> test-rpc-error (hash-table integer string &optional t) hash-table)
-(defun test-rpc-error (request code message &optional data)
+(-> test-rpc-error (hash-table integer string &key (:data t)) hash-table)
+(defun test-rpc-error (request code message &key data)
   "Return a JSON-RPC error response to REQUEST."
   (json-object
    "jsonrpc" "2.0"
@@ -575,8 +575,8 @@ so it starts without crawling every system the host happens to have."
   "Return a streaming fixture response body using WRITER."
   (make-instance 'test-http-streaming-body :writer writer))
 
-(-> test-http--write-response (stream integer list t) null)
-(defun test-http--write-response (stream status headers body)
+(-> test-http--write-response (stream integer &key (:headers list) (:body t)) null)
+(defun test-http--write-response (stream status &key headers body)
   "Write one HTTP response to STREAM."
   (format stream "HTTP/1.1 ~D ~A~C~C"
           status (test-http--reason status)
@@ -623,8 +623,9 @@ so it starts without crawling every system the host happens to have."
              (multiple-value-bind (status headers body)
                  (funcall (test-http-server-handler server)
                           server request)
-               (test-http--write-response
-                stream status headers (or body "")))))
+               (test-http--write-response stream status
+                                          :headers headers
+                                          :body    (or body "")))))
       (when (open-stream-p stream)
         (close stream))))
   nil)

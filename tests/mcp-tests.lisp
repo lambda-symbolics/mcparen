@@ -559,7 +559,7 @@
                  (test-rpc-result request (test-initialize-result))
                  (test-rpc-error
                   request -32042 "Fixture refused"
-                  (json-object "retryable" (json-false))))))
+                  :data (json-object "retryable" (json-false))))))
     (let* ((transport (make-test-scripted-transport #'handler))
            (client    (make-mcp-client transport)))
       (unwind-protect
