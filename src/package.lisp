@@ -13,7 +13,7 @@
                 #:make-thread
                 #:thread-alive-p
                 #:with-lock-held)
-  (:import-from #:serapeum #:->)
+  (:import-from #:serapeum #:-> #:partial)
   (:import-from #:babel #:string-to-octets)
   (:import-from #:quri
                 #:ip-addr-p #:ip-addr= #:ipv4-addr-p #:ipv6-addr-p

@@ -32,7 +32,7 @@
     (mcp-configuration--error "An MCP transport must be a proper, even property list."
                               :field ':transport))
   (let ((seen (make-hash-table :test #'eq)))
-    (loop for (key data) on value by #'cddr
+    (loop for key in value by (partial #'nthcdr 2)
           do (unless (member key allowed-keys)
               (mcp-configuration--error "Unknown MCP transport field."
                                         :field (and (keywordp key) key)))
@@ -125,7 +125,7 @@ control characters are rejected even when the native reader accepted them."
 (-> mcp-configuration--property (list keyword &key (:required-p boolean)) t)
 (defun mcp-configuration--property (properties key &key required-p)
   "Return KEY from PROPERTIES and reject an absent required value."
-  (loop for (candidate value) on properties by #'cddr
+  (loop for (candidate value) on properties by (partial #'nthcdr 2)
         when (eq candidate key)
         do (return-from mcp-configuration--property value))
   (when required-p
@@ -136,7 +136,7 @@ control characters are rejected even when the native reader accepted them."
 (-> mcp-configuration--property-present-p (list keyword) boolean)
 (defun mcp-configuration--property-present-p (properties key)
   "Return true when PROPERTIES explicitly contains KEY."
-  (loop for tail on properties by #'cddr
+  (loop for tail on properties by (partial #'nthcdr 2)
         thereis (eq (first tail) key)))
 
 (-> mcp-configuration--environment-name-p (t) boolean)
