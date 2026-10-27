@@ -50,8 +50,10 @@ Each call replaces only the character bound, with its own message limit.")
      :maximum-array-elements    (json-limits-maximum-array-elements limits)
      :maximum-number-characters (json-limits-maximum-number-characters limits))))
 
-(-> json--call-at-boundary (function string integer t) t)
-(defun json--call-at-boundary (function source-name limit payload)
+(-> json--call-at-boundary
+    (function &key (:source-name string) (:limit integer) (:payload t))
+    t)
+(defun json--call-at-boundary (function &key source-name limit payload)
   "Call FUNCTION, reporting argo failures as MCP conditions about SOURCE-NAME.
 
 An exceeded character bound becomes MCP-MESSAGE-TOO-LARGE for LIMIT; every
@@ -94,7 +96,8 @@ other JSON failure becomes MCP-PROTOCOL-ERROR carrying PAYLOAD."
   (json--call-at-boundary
    (lambda ()
      (argo:json-encode value :limits (json--limits limit)))
-   source-name limit nil))
+   :source-name source-name
+   :limit       limit))
 
 (-> json-encode-octets
     (t &key (:limit integer) (:source-name string))
@@ -108,7 +111,8 @@ other JSON failure becomes MCP-PROTOCOL-ERROR carrying PAYLOAD."
   (json--call-at-boundary
    (lambda ()
      (json-encode-utf8 value :limits (json--limits limit)))
-   source-name limit nil))
+   :source-name source-name
+   :limit       limit))
 
 (-> json-decode
     (string &key (:limit integer) (:source-name string))
@@ -122,9 +126,9 @@ other JSON failure becomes MCP-PROTOCOL-ERROR carrying PAYLOAD."
   (json--call-at-boundary
    (lambda ()
      (argo:json-decode source :limits (json--limits limit)))
-   source-name
-   limit
-   (subseq source 0 (min (length source) *json-diagnostic-limit*))))
+   :source-name source-name
+   :limit       limit
+   :payload     (subseq source 0 (min (length source) *json-diagnostic-limit*))))
 
 (-> json-boolean-p (t) boolean)
 (defun json-boolean-p (value)
