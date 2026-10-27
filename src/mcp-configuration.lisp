@@ -13,13 +13,11 @@
   (:documentation "A declarative MCP transport configuration is malformed."))
 
 (-> mcp-configuration--error (string &key (:field t) (:cause t)) null)
-
 (defun mcp-configuration--error (message &key field cause)
   "Signal a transport configuration failure without retaining credential values."
   (error 'mcp-configuration-error :message message :field field :cause cause))
 
 (-> mcp-configuration--proper-list-p (t) boolean)
-
 (defun mcp-configuration--proper-list-p (value)
   "Return true for a finite proper list, including the empty list."
   (and (listp value)
@@ -27,7 +25,6 @@
          (type-error () nil))))
 
 (-> mcp-configuration--validate-plist (t list) list)
-
 (defun mcp-configuration--validate-plist (value allowed-keys)
   "Validate a finite, even, unique keyword plist against ALLOWED-KEYS."
   (unless (and (mcp-configuration--proper-list-p value)
@@ -37,8 +34,8 @@
   (let ((seen (make-hash-table :test #'eq)))
     (loop for (key data) on value by #'cddr
           do (unless (member key allowed-keys)
-             (mcp-configuration--error "Unknown MCP transport field."
-                                       :field (and (keywordp key) key)))
+              (mcp-configuration--error "Unknown MCP transport field."
+                                        :field (and (keywordp key) key)))
              (when (gethash key seen)
                (mcp-configuration--error "Duplicate MCP transport field." :field key))
              (setf (gethash key seen) t)))
@@ -110,7 +107,6 @@
 (-> mcp-configuration--bounded-string-p
     (t integer &key (:empty-p boolean))
     boolean)
-
 (defun mcp-configuration--bounded-string-p
     (value maximum-characters &key empty-p)
   "Return true when VALUE is a bounded, single-line string.
@@ -127,7 +123,6 @@ control characters are rejected even when the native reader accepted them."
                       (char= character #\Space))))))
 
 (-> mcp-configuration--property (list keyword &key (:required-p boolean)) t)
-
 (defun mcp-configuration--property (properties key &key required-p)
   "Return KEY from PROPERTIES and reject an absent required value."
   (loop for (candidate value) on properties by #'cddr
@@ -139,14 +134,12 @@ control characters are rejected even when the native reader accepted them."
   nil)
 
 (-> mcp-configuration--property-present-p (list keyword) boolean)
-
 (defun mcp-configuration--property-present-p (properties key)
   "Return true when PROPERTIES explicitly contains KEY."
   (loop for tail on properties by #'cddr
         thereis (eq (first tail) key)))
 
 (-> mcp-configuration--environment-name-p (t) boolean)
-
 (defun mcp-configuration--environment-name-p (value)
   "Return true when VALUE is a portable POSIX environment name."
   (and (stringp value)
@@ -162,7 +155,6 @@ control characters are rejected even when the native reader accepted them."
                         (char= character #\_)))))
 
 (-> mcp-configuration--http-header-name-p (t) boolean)
-
 (defun mcp-configuration--http-header-name-p (value)
   "Return true when VALUE is a non-reserved HTTP token header name."
   (and (stringp value)
@@ -179,7 +171,6 @@ control characters are rejected even when the native reader accepted them."
                     :test #'string-equal))))
 
 (-> mcp-configuration--binding (t &key (:header-p boolean)) mcp-environment-binding)
-
 (defun mcp-configuration--binding (form &key header-p)
   "Parse one environment-backed process or HTTP binding FORM."
   (unless
@@ -203,7 +194,6 @@ control characters are rejected even when the native reader accepted them."
                    (copy-seq source))))
 
 (-> mcp-configuration--bindings (t &key (:header-p boolean)) list)
-
 (defun mcp-configuration--bindings (forms &key header-p)
   "Validate and copy unique environment-backed binding FORMS."
   (unless (mcp-configuration--proper-list-p forms)
@@ -236,7 +226,6 @@ control characters are rejected even when the native reader accepted them."
     bindings))
 
 (-> mcp-configuration--positive-timeout (t keyword) real)
-
 (defun mcp-configuration--positive-timeout (value field)
   "Return a positive bounded real timeout VALUE or reject FIELD."
   (unless
@@ -250,14 +239,13 @@ control characters are rejected even when the native reader accepted them."
 
 (-> mcp-configuration--stdio (list &key (:default-directory t))
     mcp-stdio-transport-configuration)
-
 (defun mcp-configuration--stdio (form &key (default-directory ':workspace))
   "Parse one native standard-input and standard-output transport FORM."
   (mcp-configuration--validate-plist form
                                      '(:type :command :arguments :directory
                                        :environment))
-  (let* ((command (mcp-configuration--property form :command :required-p t))
-         (arguments (mcp-configuration--property form :arguments))
+  (let* ((command     (mcp-configuration--property form :command :required-p t))
+         (arguments   (mcp-configuration--property form :arguments))
          (directory
           (if (mcp-configuration--property-present-p form :directory)
               (mcp-configuration--property form :directory)
@@ -292,10 +280,9 @@ control characters are rejected even when the native reader accepted them."
                    (if (stringp directory)
                        (copy-seq directory)
                        directory)
-                   :environment-bindings (mcp-configuration--bindings environment))))
+                   :environment-bindings                       (mcp-configuration--bindings environment))))
 
 (-> mcp-configuration--split-string (string character) list)
-
 (defun mcp-configuration--split-string (value separator)
   "Split VALUE at every SEPARATOR while preserving empty components."
   (loop with start = 0
@@ -305,7 +292,6 @@ control characters are rejected even when the native reader accepted them."
         do (setf start (1+ position))))
 
 (-> mcp-configuration--domain-host-p (string) boolean)
-
 (defun mcp-configuration--domain-host-p (host)
   "Return true when HOST is a bounded ASCII DNS name."
   (let ((name
@@ -320,7 +306,7 @@ control characters are rejected even when the native reader accepted them."
             (and (plusp (length label))
                  (<= (length label) 63)
                  (let ((first-character (char label 0))
-                       (last-character (char label (1- (length label))))
+                       (last-character  (char label (1- (length label))))
                        (ascii-alphanumeric-p
                          (lambda (character)
                            (and (<= (char-code character) 127)
@@ -335,7 +321,6 @@ control characters are rejected even when the native reader accepted them."
           (mcp-configuration--split-string name #\.)))))
 
 (-> mcp-configuration--http-host-p (string) boolean)
-
 (defun mcp-configuration--http-host-p (host)
   "Return true when HOST is a validated DNS, IPv4, or bracketed IPv6 host."
   (cond
@@ -351,7 +336,6 @@ control characters are rejected even when the native reader accepted them."
      (mcp-configuration--domain-host-p host))))
 
 (-> mcp-configuration--loopback-host-p (string) boolean)
-
 (defun mcp-configuration--loopback-host-p (host)
   "Return true only when HOST denotes an unambiguous loopback address."
   (or (string-equal host "localhost")
@@ -366,7 +350,6 @@ control characters are rejected even when the native reader accepted them."
        (ip-addr= host "[::1]"))))
 
 (-> mcp-configuration--url-authority-port-syntax-p (string) boolean)
-
 (defun mcp-configuration--url-authority-port-syntax-p (url)
   "Return true when URL's authority has a syntactically valid optional port."
   (let ((scheme-end (search "://" url)))
@@ -380,7 +363,7 @@ control characters are rejected even when the native reader accepted them."
                   url
                   :start authority-start)
                  (length url)))
-           (authority (subseq url authority-start authority-end)))
+           (authority       (subseq url authority-start authority-end)))
       (unless (plusp (length authority))
         (return-from mcp-configuration--url-authority-port-syntax-p nil))
       (labels ((decimal-port-p (value)
@@ -404,17 +387,16 @@ control characters are rejected even when the native reader accepted them."
                         (subseq authority (1+ colon)))))))))))
 
 (-> mcp-configuration--validate-http-url (t) string)
-
 (defun mcp-configuration--validate-http-url (url)
   "Return URL after strict Streamable HTTP endpoint validation."
   (unless (mcp-configuration--bounded-string-p url *mcp-http-url-maximum-characters*)
     (mcp-configuration--error
      "An MCP Streamable HTTP URL must be a bounded non-empty string." :field ':url))
   (handler-case
-   (let* ((uri (uri url))
+   (let* ((uri    (uri url))
           (scheme (uri-scheme uri))
-          (host (uri-host uri))
-          (port (uri-port uri)))
+          (host   (uri-host uri))
+          (port   (uri-port uri)))
      (unless
          (and (member scheme '("http" "https") :test #'string-equal)
               (mcp-configuration--url-authority-port-syntax-p url) (stringp host)
@@ -434,12 +416,11 @@ control characters are rejected even when the native reader accepted them."
 
 (-> mcp-configuration--http (list &key (:default-connect-timeout-seconds real))
     mcp-http-transport-configuration)
-
 (defun mcp-configuration--http (form &key (default-connect-timeout-seconds 10))
   "Parse one native Streamable HTTP transport FORM."
   (mcp-configuration--validate-plist form
                                      '(:type :url :headers :connect-timeout-seconds))
-  (let* ((url (mcp-configuration--property form :url :required-p t))
+  (let* ((url     (mcp-configuration--property form :url :required-p t))
          (headers (mcp-configuration--property form :headers))
          (connect-timeout
           (if (mcp-configuration--property-present-p form :connect-timeout-seconds)
@@ -447,7 +428,7 @@ control characters are rejected even when the native reader accepted them."
               default-connect-timeout-seconds)))
     (mcp-configuration--validate-http-url url)
     (make-instance 'mcp-http-transport-configuration :url (copy-seq url)
-                   :header-bindings (mcp-configuration--bindings headers :header-p t)
+                   :header-bindings                       (mcp-configuration--bindings headers :header-p t)
                    :connect-timeout-seconds
                    (mcp-configuration--positive-timeout connect-timeout
                                                         :connect-timeout-seconds))))
@@ -456,7 +437,6 @@ control characters are rejected even when the native reader accepted them."
     (t &key (:default-directory t) (:default-connect-timeout-seconds t)
             (:maximum-timeout-seconds real))
     mcp-transport-configuration)
-
 (defun mcp-read-transport-configuration
     (form &key (default-directory ':workspace)
                (default-connect-timeout-seconds 10)

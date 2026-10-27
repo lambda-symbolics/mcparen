@@ -38,110 +38,110 @@
 
 (defclass mcp-streamable-http-transport (mcp-transport)
   ((url
-    :initarg :url
-    :reader mcp-http-transport-url
-    :type string
+    :initarg       :url
+    :reader        mcp-http-transport-url
+    :type          string
     :documentation "The Streamable HTTP endpoint.")
    (headers-function
-    :initarg :headers-function
+    :initarg  :headers-function
     :initform (constantly nil)
-    :reader mcp-http-transport-headers-function
-    :type function
+    :reader   mcp-http-transport-headers-function
+    :type     function
     :documentation
     "A function returning request headers. It is called for every request.")
    (exchange-scope-function
-    :initarg :exchange-scope-function
+    :initarg  :exchange-scope-function
     :initform #'mcp-http--identity-exchange-scope
-    :reader mcp-http-transport-exchange-scope-function
-    :type function
+    :reader   mcp-http-transport-exchange-scope-function
+    :type     function
     :documentation
     "A function that synchronously calls a zero-argument thunk around each
 complete HTTP exchange, preserving its values and unwinding on failures.")
    (connect-timeout
-    :initarg :connect-timeout
-    :initform *mcp-http-default-connect-timeout*
-    :reader mcp-http-transport-connect-timeout
-    :type real
+    :initarg       :connect-timeout
+    :initform      *mcp-http-default-connect-timeout*
+    :reader        mcp-http-transport-connect-timeout
+    :type          real
     :documentation "The connection timeout in seconds.")
    (request-handler
-    :initarg :request-handler
-    :initform nil
-    :reader mcp-http-transport-request-handler
-    :type t
+    :initarg       :request-handler
+    :initform      nil
+    :reader        mcp-http-transport-request-handler
+    :type          t
     :documentation "An optional function handling server-originated requests.")
    (notification-handler
-    :initarg :notification-handler
-    :initform nil
-    :reader mcp-http-transport-notification-handler
-    :type t
+    :initarg       :notification-handler
+    :initform      nil
+    :reader        mcp-http-transport-notification-handler
+    :type          t
     :documentation "An optional function receiving server notifications.")
    (maximum-message-characters
-    :initarg :maximum-message-characters
-    :initform *mcp-maximum-message-characters*
-    :reader mcp-http-transport-maximum-message-characters
-    :type integer
+    :initarg       :maximum-message-characters
+    :initform      *mcp-maximum-message-characters*
+    :reader        mcp-http-transport-maximum-message-characters
+    :type          integer
     :documentation "The maximum characters accepted in one HTTP JSON document.")
    (state-lock
-    :initform (make-lock "mcparen HTTP state")
-    :reader mcp-http-transport-state-lock
-    :type t
+    :initform      (make-lock "mcparen HTTP state")
+    :reader        mcp-http-transport-state-lock
+    :type          t
     :documentation "The lock protecting session and negotiated protocol state.")
    (session-identifier
-    :initform nil
-    :accessor mcp-http-transport-session-identifier
-    :type t
+    :initform      nil
+    :accessor      mcp-http-transport-session-identifier
+    :type          t
     :documentation "The server-issued opaque MCP session identifier.")
    (pending-session-identifier
     :initform nil
     :accessor mcp-http-transport-pending-session-identifier
-    :type t
+    :type     t
     :documentation
     "A valid initialize response session awaiting client validation.")
    (protocol-version
-    :initform nil
-    :accessor mcp-http-transport-protocol-version
-    :type t
+    :initform      nil
+    :accessor      mcp-http-transport-protocol-version
+    :type          t
     :documentation "The negotiated MCP protocol version.")
    (listener-condition-variable
-    :initform (make-condition-variable)
-    :reader mcp-http-transport-listener-condition-variable
-    :type t
+    :initform      (make-condition-variable)
+    :reader        mcp-http-transport-listener-condition-variable
+    :type          t
     :documentation "The condition interrupting listener reconnection waits.")
    (listener-thread
-    :initform nil
-    :accessor mcp-http-transport-listener-thread
-    :type t
+    :initform      nil
+    :accessor      mcp-http-transport-listener-thread
+    :type          t
     :documentation "The owned idle Streamable HTTP GET listener thread.")
    (listener-body
-    :initform nil
-    :accessor mcp-http-transport-listener-body
-    :type t
+    :initform      nil
+    :accessor      mcp-http-transport-listener-body
+    :type          t
     :documentation "The response body currently read by the idle listener.")
    (listener-stopping-p
-    :initform t
-    :accessor mcp-http-transport-listener-stopping-p
-    :type boolean
+    :initform      t
+    :accessor      mcp-http-transport-listener-stopping-p
+    :type          boolean
     :documentation "True when the idle listener must stop or remain stopped.")
    (listener-support-state
     :initform ':unknown
     :accessor mcp-http-transport-listener-support-state
-    :type keyword
+    :type     keyword
     :documentation
     "The idle GET support state for the current initialized session.")
    (listener-generation
-    :initform 0
-    :accessor mcp-http-transport-listener-generation
-    :type (integer 0)
+    :initform      0
+    :accessor      mcp-http-transport-listener-generation
+    :type          (integer 0)
     :documentation "The token preventing an old listener from changing new state.")
    (listener-failure
-    :initform nil
-    :accessor mcp-http-transport-listener-failure
-    :type t
+    :initform      nil
+    :accessor      mcp-http-transport-listener-failure
+    :type          t
     :documentation "The terminal protocol failure from the idle listener.")
    (open-p
-    :initform nil
-    :accessor mcp-http-transport-open-p
-    :type boolean
+    :initform      nil
+    :accessor      mcp-http-transport-open-p
+    :type          boolean
     :documentation "True after the logical HTTP transport has opened."))
   (:documentation "A synchronous MCP Streamable HTTP client transport."))
 
@@ -170,32 +170,32 @@ exchange. It must call the thunk synchronously exactly once and preserve all
 returned values. The default calls the thunk without adding a scope."
   (unless (and (stringp url) (plusp (length url)))
     (error 'mcp-transport-error
-           :message "An MCP Streamable HTTP endpoint must be a non-empty URL."
+           :message   "An MCP Streamable HTTP endpoint must be a non-empty URL."
            :transport nil
-           :cause nil))
+           :cause     nil))
   (unless (and (realp connect-timeout) (plusp connect-timeout))
     (error 'mcp-transport-error
-           :message "The MCP HTTP connection timeout must be positive."
+           :message   "The MCP HTTP connection timeout must be positive."
            :transport nil
-           :cause nil))
+           :cause     nil))
   (unless (functionp exchange-scope-function)
     (error 'mcp-transport-error
-           :message "The MCP HTTP exchange scope must be a function."
+           :message   "The MCP HTTP exchange scope must be a function."
            :transport nil
-           :cause nil))
+           :cause     nil))
   (unless (and (integerp maximum-message-characters)
                (plusp maximum-message-characters))
     (error 'mcp-transport-error
-           :message "The MCP HTTP message limit must be a positive integer."
+           :message   "The MCP HTTP message limit must be a positive integer."
            :transport nil
-           :cause nil))
+           :cause     nil))
   (make-instance 'mcp-streamable-http-transport
-                 :url url
-                 :headers-function headers-function
-                 :exchange-scope-function exchange-scope-function
-                 :connect-timeout connect-timeout
-                 :request-handler request-handler
-                 :notification-handler notification-handler
+                 :url                        url
+                 :headers-function           headers-function
+                 :exchange-scope-function    exchange-scope-function
+                 :connect-timeout            connect-timeout
+                 :request-handler            request-handler
+                 :notification-handler       notification-handler
                  :maximum-message-characters maximum-message-characters))
 
 (-> mcp-http--call-with-exchange-scope
@@ -236,7 +236,7 @@ returned values. The default calls the thunk without adding a scope."
         (error 'mcp-protocol-error
                :message
                "The MCP HTTP transport already has an active session."
-               :method "initialize"
+               :method  "initialize"
                :payload nil))
       (setf (mcp-http-transport-session-identifier transport)
             (mcp-http-transport-pending-session-identifier transport)
@@ -297,22 +297,22 @@ returned values. The default calls the thunk without adding a scope."
                (funcall (mcp-http-transport-headers-function transport)))
             (error (cause)
               (error 'mcp-transport-error
-                     :message "Could not resolve MCP HTTP request headers."
+                     :message   "Could not resolve MCP HTTP request headers."
                      :transport transport
-                     :cause cause)))))
+                     :cause     cause)))))
     (unless (listp headers)
       (error 'mcp-transport-error
-             :message "The MCP HTTP header provider must return an alist."
+             :message   "The MCP HTTP header provider must return an alist."
              :transport transport
-             :cause nil))
+             :cause     nil))
     (dolist (entry headers)
       (unless (and (consp entry)
                    (or (stringp (first entry)) (symbolp (first entry)))
                    (mcp-http--valid-header-value-p (rest entry)))
         (error 'mcp-transport-error
-               :message "The MCP HTTP header provider returned an invalid header."
+               :message   "The MCP HTTP header provider returned an invalid header."
                :transport transport
-               :cause nil))
+               :cause     nil))
       (when (find (first entry)
                   *mcp-http-managed-header-names*
                   :test #'mcp-http--header-name=)
@@ -322,14 +322,14 @@ returned values. The default calls the thunk without adding a scope."
                        "The MCP HTTP header provider cannot override ~A."
                        (first entry))
                :transport transport
-               :cause nil)))
+               :cause     nil)))
     (when (and last-event-identifier
                (not
                 (mcp-http--valid-header-value-p
                  last-event-identifier)))
       (error 'mcp-protocol-error
              :message "The MCP SSE event identifier is not a valid HTTP header value."
-             :method nil
+             :method  nil
              :payload nil))
     (with-lock-held ((mcp-http-transport-state-lock transport))
       (append
@@ -382,8 +382,8 @@ returned values. The default calls the thunk without adding a scope."
   (labels ((named-type-p (package-name type-name)
              "Test CONDITION against TYPE-NAME when its package is present."
              (let* ((package (find-package package-name))
-                    (symbol (and package
-                                 (find-symbol type-name package))))
+                    (symbol  (and package
+                                  (find-symbol type-name package))))
                (and symbol
                     (ignore-errors (typep condition symbol))))))
     (or (typep condition 'ls-compat:timeout-expired)
@@ -402,9 +402,9 @@ returned values. The default calls the thunk without adding a scope."
          :message
          (format nil "~A timed out after ~,2F seconds." operation timeout)
          :transport transport
-         :cause cause
+         :cause     cause
          :operation operation
-         :seconds timeout))
+         :seconds   timeout))
 
 (-> mcp-http--require-time-remaining
     (mcp-streamable-http-transport integer
@@ -418,7 +418,7 @@ returned values. The default calls the thunk without adding a scope."
       (mcp-http--signal-timeout
        transport timeout
        :operation operation
-       :cause nil))
+       :cause     nil))
     remaining))
 
 (-> mcp-http--body->string
@@ -439,7 +439,7 @@ returned values. The default calls the thunk without adding a scope."
       (t
        (error 'mcp-protocol-error
               :message "The MCP HTTP response body is not readable."
-              :method nil
+              :method  nil
               :payload nil)))))
 
 (-> mcp-http--response-message
@@ -452,12 +452,12 @@ returned values. The default calls the thunk without adding a scope."
     (when (zerop (length trimmed))
       (error 'mcp-protocol-error
              :message "The MCP HTTP server returned an empty JSON response."
-             :method nil
+             :method  nil
              :payload nil))
     (let ((message
             (json-decode
              trimmed
-             :limit limit
+             :limit       limit
              :source-name "MCP HTTP JSON response")))
       (json-rpc-message-validate message)
       message)))
@@ -477,9 +477,9 @@ returned values. The default calls the thunk without adding a scope."
               (mcp-http-transport-protocol-version transport) nil
               (mcp-http-transport-open-p transport) nil)))
     (error 'mcp-session-expired
-           :message "The MCP HTTP session expired."
+           :message   "The MCP HTTP session expired."
            :transport transport
-           :cause cause))
+           :cause     cause))
   nil)
 
 (-> mcp-http--stage-initialize-session-header
@@ -503,13 +503,13 @@ protocol checks."
     (error 'mcp-protocol-error
            :message
            "An MCP initialize request carried an existing session identifier."
-           :method "initialize"
+           :method  "initialize"
            :payload nil))
   (when response-session
     (unless (mcp-http--valid-session-identifier-p response-session)
       (error 'mcp-protocol-error
              :message "The MCP server returned an invalid session identifier."
-             :method nil
+             :method  nil
              :payload nil))
     (cond
       (initialize-request-p
@@ -523,7 +523,7 @@ protocol checks."
        (error 'mcp-protocol-error
               :message
               "The MCP server returned a new session identifier outside initialization."
-              :method nil
+              :method  nil
               :payload nil))))
   nil)
 
@@ -541,18 +541,18 @@ protocol checks."
   "Perform one bounded HTTP METHOD and return its owned body, status, and headers."
   (unless (mcp-transport-open-p transport)
     (error 'mcp-transport-error
-           :message "The MCP HTTP transport is closed."
+           :message   "The MCP HTTP transport is closed."
            :transport transport
-           :cause nil))
+           :cause     nil))
   (let* ((remaining
            (mcp-http--require-time-remaining
             transport deadline
-            :timeout timeout
+            :timeout   timeout
             :operation operation))
          (request-headers
            (mcp-http--request-headers
             transport
-            :method method
+            :method                method
             :last-event-identifier last-event-identifier))
          (request-session
            (mcp-http--header-value request-headers "Mcp-Session-Id"))
@@ -566,16 +566,16 @@ protocol checks."
             (apply
              #'dexador:request
              (mcp-http-transport-url transport)
-             :method method
-             :headers request-headers
-             :want-stream t
+             :method        method
+             :headers       request-headers
+             :want-stream   t
              :connect-timeout
              (min remaining
                   (mcp-http-transport-connect-timeout transport))
-             :read-timeout remaining
+             :read-timeout  remaining
              :max-redirects 0
-             :force-string t
-             :keep-alive nil
+             :force-string  t
+             :keep-alive    nil
              (when message
                (list
                 :content
@@ -597,12 +597,12 @@ protocol checks."
                                     "The MCP HTTP server returned status ~D."
                                     status)
                             :transport transport
-                            :cause nil))
+                            :cause     nil))
                    (mcp-http--stage-initialize-session-header
                     transport
                     (mcp-http--header-value headers "Mcp-Session-Id")
-                    :request-session request-session
-                    :initialize-request-p initialize-request-p
+                    :request-session          request-session
+                    :initialize-request-p     initialize-request-p
                     :allow-repeated-session-p (eq method ':post))
                    (setf body-released-p t)
                    (values body status headers))
@@ -619,7 +619,7 @@ protocol checks."
                  (format nil "The MCP HTTP server returned status ~A."
                          status)
                  :transport transport
-                 :cause cause)))
+                 :cause     cause)))
       (mcp-error (condition)
         (error condition))
       (error (cause)
@@ -627,12 +627,12 @@ protocol checks."
             (mcp-http--signal-timeout
              transport timeout
              :operation operation
-             :cause cause)
+             :cause     cause)
             (error 'mcp-transport-error
                    :message
                    (format nil "The MCP HTTP request failed: ~A" cause)
                    :transport transport
-                   :cause cause))))))
+                   :cause     cause))))))
 
 (-> mcp-http--server-response
     (t t t)
@@ -656,9 +656,9 @@ protocol checks."
   (multiple-value-bind (body status headers)
       (mcp-http--exchange
        transport ':post
-       :message response
-       :deadline deadline
-       :timeout timeout
+       :message   response
+       :deadline  deadline
+       :timeout   timeout
        :operation "MCP HTTP server response")
     (declare (ignore headers))
     (unwind-protect
@@ -669,7 +669,7 @@ protocol checks."
                     (format nil
                             "The MCP server acknowledged a client response with status ~D, not 202."
                             status)
-                    :method nil
+                    :method  nil
                     :payload nil))
            (let ((text
                    (mcp-http--body->string
@@ -683,7 +683,7 @@ protocol checks."
                (error 'mcp-protocol-error
                       :message
                       "The MCP server-response acknowledgement contained a body."
-                      :method nil
+                      :method  nil
                       :payload nil))))
       (mcp-http--close-body body)))
   nil)
@@ -699,15 +699,15 @@ protocol checks."
     (transport message
      &key expected-identifier deadline timeout reject-responses-p)
   "Dispatch MESSAGE and return its response plus a matching-response flag."
-  (let ((kind (json-rpc-message-validate message))
+  (let ((kind       (json-rpc-message-validate message))
         (identifier (json-get message "id" :absent))
-        (method (json-get message "method")))
+        (method     (json-get message "method")))
     (cond
       ((and (eq kind ':response) reject-responses-p)
        (error 'mcp-protocol-error
               :message
               "The MCP idle GET stream emitted a JSON-RPC response."
-              :method nil
+              :method  nil
               :payload message))
       ((and (eq kind ':response)
             (equal identifier expected-identifier))
@@ -763,7 +763,7 @@ protocol checks."
              (mcp-http--send-server-response
               transport response
               :deadline response-deadline
-              :timeout response-timeout))))
+              :timeout  response-timeout))))
        (values nil nil))
       ((eq kind ':notification)
        (let ((handler
@@ -778,7 +778,7 @@ protocol checks."
       (t
        (error 'mcp-protocol-error
               :message "The MCP SSE stream emitted an unclassified message."
-              :method nil
+              :method  nil
               :payload message)))))
 
 (-> mcp-http--content-type-p (t string) boolean)
@@ -829,12 +829,12 @@ protocol checks."
      &key deadline timeout last-event-identifier retry-milliseconds
        reject-responses-p)
   "Read one SSE fragment and return response state needed for resumption."
-  (let ((data-lines nil)
-        (data-characters 0)
+  (let ((data-lines        nil)
+        (data-characters   0)
         (matching-response nil)
-        (matching-p nil)
-        (progress-p nil)
-        (limit (mcp-http-transport-maximum-message-characters transport)))
+        (matching-p        nil)
+        (progress-p        nil)
+        (limit             (mcp-http-transport-maximum-message-characters transport)))
     (labels ((clear-event ()
                "Clear the accumulated data for the next SSE event."
                (setf data-lines nil
@@ -859,17 +859,17 @@ protocol checks."
                         transport
                         (json-decode
                          trimmed
-                         :limit limit
+                         :limit       limit
                          :source-name "MCP SSE event data")
                         :expected-identifier expected-identifier
-                        :deadline deadline
-                        :timeout timeout
-                        :reject-responses-p reject-responses-p)))))))
+                        :deadline            deadline
+                        :timeout             timeout
+                        :reject-responses-p  reject-responses-p)))))))
       (loop
         (when deadline
           (mcp-http--require-time-remaining
            transport deadline
-           :timeout timeout
+           :timeout   timeout
            :operation "MCP HTTP request"))
         (multiple-value-bind (raw-line end-of-file-p)
             (stream-read-bounded-line
@@ -924,7 +924,7 @@ protocol checks."
   (let* ((remaining
            (mcp-http--require-time-remaining
             transport deadline
-            :timeout timeout
+            :timeout   timeout
             :operation operation))
          (delay (/ retry-milliseconds 1000)))
     (if (< remaining delay)
@@ -933,7 +933,7 @@ protocol checks."
           (mcp-http--signal-timeout
            transport timeout
            :operation operation
-           :cause nil))
+           :cause     nil))
         (sleep delay)))
   nil)
 
@@ -950,12 +950,12 @@ protocol checks."
            (format nil
                    "The MCP HTTP response for ~A is not text/event-stream."
                    method)
-           :method method
+           :method  method
            :payload nil))
   (unless (streamp body)
     (error 'mcp-protocol-error
            :message "The MCP SSE response is not a stream."
-           :method method
+           :method  method
            :payload nil))
   body)
 
@@ -966,9 +966,9 @@ protocol checks."
 (defun mcp-http--read-sse-response
     (transport initial-stream identifier &key deadline timeout)
   "Read and resume SSE fragments until IDENTIFIER's response arrives."
-  (let ((stream initial-stream)
+  (let ((stream                initial-stream)
         (last-event-identifier nil)
-        (retry-milliseconds *mcp-http-default-sse-retry-milliseconds*))
+        (retry-milliseconds    *mcp-http-default-sse-retry-milliseconds*))
     (loop for resumption-count from 0
           do
              (multiple-value-bind
@@ -976,10 +976,10 @@ protocol checks."
                  (unwind-protect
                       (mcp-http--read-sse-fragment
                        transport stream identifier
-                       :deadline deadline
-                       :timeout timeout
+                       :deadline              deadline
+                       :timeout               timeout
                        :last-event-identifier last-event-identifier
-                       :retry-milliseconds retry-milliseconds)
+                       :retry-milliseconds    retry-milliseconds)
                    (mcp-http--close-body stream))
                (setf last-event-identifier next-event-identifier
                      retry-milliseconds next-retry)
@@ -992,7 +992,7 @@ protocol checks."
                       (format nil
                               "The MCP SSE stream ended before response identifier ~S and supplied no resumable event identifier."
                               identifier)
-                      :method nil
+                      :method  nil
                       :payload nil))
              (when (>= resumption-count *mcp-http-sse-resumption-limit*)
                (error 'mcp-protocol-error
@@ -1000,19 +1000,19 @@ protocol checks."
                       (format nil
                               "The MCP SSE request exceeded its ~D-resumption safety limit."
                               *mcp-http-sse-resumption-limit*)
-                      :method nil
+                      :method  nil
                       :payload nil))
              (mcp-http--sleep-before-resumption
               transport retry-milliseconds
-              :deadline deadline
-              :timeout timeout
+              :deadline  deadline
+              :timeout   timeout
               :operation "MCP HTTP request")
              (multiple-value-bind (body status headers)
                  (mcp-http--exchange
                   transport ':get
-                  :deadline deadline
-                  :timeout timeout
-                  :operation "MCP HTTP SSE resumption"
+                  :deadline              deadline
+                  :timeout               timeout
+                  :operation             "MCP HTTP SSE resumption"
                   :last-event-identifier last-event-identifier)
                (declare (ignore status))
                (handler-case
@@ -1153,7 +1153,7 @@ protocol checks."
   (let* ((headers
            (mcp-http--request-headers
             transport
-            :method ':get
+            :method                ':get
             :last-event-identifier last-event-identifier))
          (request-session
            (mcp-http--header-value headers "Mcp-Session-Id"))
@@ -1164,14 +1164,14 @@ protocol checks."
             (ls-compat:with-timeout connect-timeout
               (dexador:request
                (mcp-http-transport-url transport)
-               :method :get
-               :headers headers
-               :want-stream t
+               :method          :get
+               :headers         headers
+               :want-stream     t
                :connect-timeout connect-timeout
-               :read-timeout nil
-               :max-redirects 0
-               :force-string t
-               :keep-alive nil))
+               :read-timeout    nil
+               :max-redirects   0
+               :force-string    t
+               :keep-alive      nil))
           (let ((released-p nil))
             (unwind-protect
                  (progn
@@ -1189,7 +1189,7 @@ protocol checks."
                     transport
                     (mcp-http--header-value
                      response-headers "Mcp-Session-Id")
-                    :request-session request-session
+                    :request-session      request-session
                     :initialize-request-p nil)
                    (setf released-p t)
                    (values body response-headers ':stream))
@@ -1201,9 +1201,12 @@ protocol checks."
           (values
            nil nil
            (cond
-             ((eql status 404) ':expired)
-             ((eql status 405) ':unsupported)
-             (t ':retry)))))
+             ((eql status 404)
+              ':expired)
+             ((eql status 405)
+              ':unsupported)
+             (t
+              ':retry)))))
       (ls-compat:timeout-expired ()
         (values nil nil ':retry))
       (mcp-error (condition)
@@ -1220,7 +1223,7 @@ protocol checks."
    (format nil
            "The MCP idle GET listener exceeded its ~D-resumption no-progress limit."
            *mcp-http-idle-no-progress-resumption-limit*)
-   :method nil
+   :method  nil
    :payload nil))
 
 (-> mcp-http--idle-listener-loop
@@ -1233,7 +1236,7 @@ protocol checks."
            (let ((last-event-identifier nil)
                  (retry-milliseconds
                    *mcp-http-default-sse-retry-milliseconds*)
-                 (no-progress-count 0))
+                 (no-progress-count     0))
              (loop
                (when
                    (mcp-http--listener-stop-requested-p
@@ -1435,13 +1438,13 @@ protocol checks."
       (mcp-http--signal-timeout
        transport timeout
        :operation operation
-       :cause cause))))
+       :cause     cause))))
 
 (defmethod mcp-transport-request
     ((transport mcp-streamable-http-transport) request timeout)
   "Send REQUEST and read JSON or resumable SSE under one deadline."
-  (let ((deadline (mcp-http--deadline timeout))
-        (method (json-get request "method"))
+  (let ((deadline   (mcp-http--deadline timeout))
+        (method     (json-get request "method"))
         (identifier (json-get request "id")))
     (mcp-http--call-with-exchange-scope
      transport
@@ -1452,9 +1455,9 @@ protocol checks."
           (multiple-value-bind (body status headers)
               (mcp-http--exchange
                transport ':post
-               :message request
-               :deadline deadline
-               :timeout timeout
+               :message   request
+               :deadline  deadline
+               :timeout   timeout
                :operation "MCP HTTP request")
             (declare (ignore status))
             (unwind-protect
@@ -1467,7 +1470,7 @@ protocol checks."
                       (mcp-http--read-sse-response
                        transport body identifier
                        :deadline deadline
-                       :timeout timeout))
+                       :timeout  timeout))
                      ((mcp-http--content-type-p
                        content-type "application/json")
                       (mcp-http--response-message
@@ -1482,7 +1485,7 @@ protocol checks."
                              (format nil
                                      "The MCP HTTP response has unsupported content type ~S."
                                      content-type)
-                             :method method
+                             :method  method
                              :payload nil))))
               (mcp-http--close-body body))))
         :operation "MCP HTTP request")))))
@@ -1500,9 +1503,9 @@ protocol checks."
           (multiple-value-bind (body status headers)
               (mcp-http--exchange
                transport ':post
-               :message notification
-               :deadline deadline
-               :timeout timeout
+               :message   notification
+               :deadline  deadline
+               :timeout   timeout
                :operation "MCP HTTP notification")
             (declare (ignore headers))
             (unwind-protect
@@ -1513,7 +1516,7 @@ protocol checks."
                             (format nil
                                     "The MCP server acknowledged a notification with status ~D, not 202."
                                     status)
-                            :method (json-get notification "method")
+                            :method  (json-get notification "method")
                             :payload nil))
                    (let ((text
                            (mcp-http--body->string
@@ -1527,7 +1530,7 @@ protocol checks."
                        (error 'mcp-protocol-error
                               :message
                               "The MCP notification acknowledgement contained a body."
-                              :method (json-get notification "method")
+                              :method  (json-get notification "method")
                               :payload nil))))
               (mcp-http--close-body body))))
         :operation "MCP HTTP notification"))))
@@ -1550,7 +1553,7 @@ protocol checks."
                 (lambda ()
                   (dexador:request
                    (mcp-http-transport-url transport)
-                   :method :delete
+                   :method        :delete
                    :headers
                    (mcp-http--request-headers
                     transport :method ':delete)
@@ -1559,8 +1562,8 @@ protocol checks."
                    :read-timeout
                    (mcp-http-transport-connect-timeout transport)
                    :max-redirects 0
-                   :force-string t
-                   :keep-alive nil)))
+                   :force-string  t
+                   :keep-alive    nil)))
              (error ()
                nil)))
       (with-lock-held ((mcp-http-transport-state-lock transport))

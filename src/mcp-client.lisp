@@ -56,58 +56,58 @@
 
 (defclass mcp-tool ()
   ((name
-    :initarg :name
-    :reader mcp-tool-name
-    :type string
+    :initarg       :name
+    :reader        mcp-tool-name
+    :type          string
     :documentation "The server-local MCP tool name.")
    (title
-    :initarg :title
-    :initform nil
-    :reader mcp-tool-title
-    :type t
+    :initarg       :title
+    :initform      nil
+    :reader        mcp-tool-title
+    :type          t
     :documentation "The optional human-readable display title.")
    (description
-    :initarg :description
-    :initform ""
-    :reader mcp-tool-description
-    :type string
+    :initarg       :description
+    :initform      ""
+    :reader        mcp-tool-description
+    :type          string
     :documentation "The model-visible MCP tool description.")
    (input-schema
-    :initarg :input-schema
-    :reader mcp-tool-input-schema
-    :type hash-table
+    :initarg       :input-schema
+    :reader        mcp-tool-input-schema
+    :type          hash-table
     :documentation "The JSON Schema accepted by the MCP tool.")
    (output-schema
-    :initarg :output-schema
-    :initform nil
-    :reader mcp-tool-output-schema
-    :type t
+    :initarg       :output-schema
+    :initform      nil
+    :reader        mcp-tool-output-schema
+    :type          t
     :documentation "The optional JSON Schema produced by the MCP tool.")
    (annotations
-    :initarg :annotations
-    :initform nil
-    :reader mcp-tool-annotations
-    :type t
+    :initarg       :annotations
+    :initform      nil
+    :reader        mcp-tool-annotations
+    :type          t
     :documentation "Optional behavior hints supplied by the MCP server.")
    (execution
-    :initarg :execution
+    :initarg  :execution
     :initform nil
-    :reader mcp-tool-execution
-    :type t
+    :reader   mcp-tool-execution
+    :type     t
     :documentation
     "Optional execution metadata supplied by the MCP server. Mcparen only
 interprets it for protocol revisions that define task-augmented requests.")
    (task-support
-    :initarg :task-support
+    :initarg  :task-support
     :initform "forbidden"
-    :reader mcp-tool-task-support
-    :type string
+    :reader   mcp-tool-task-support
+    :type     string
     :documentation
     "The validated taskSupport policy, defaulting to forbidden when absent.")
    (raw
-    :initarg :raw
-    :reader mcp-tool-raw
-    :type hash-table
+    :initarg       :raw
+    :reader        mcp-tool-raw
+    :type          hash-table
     :documentation "The complete portable MCP tool object."))
   (:documentation "Validated metadata for one server-provided MCP tool."))
 
@@ -139,27 +139,27 @@ interprets it for protocol revisions that define task-augmented requests.")
 
 (defclass mcp-call-result ()
   ((content
-    :initarg :content
-    :initform nil
-    :reader mcp-call-result-content
-    :type list
+    :initarg       :content
+    :initform      nil
+    :reader        mcp-call-result-content
+    :type          list
     :documentation "The ordered MCP content blocks.")
    (structured-content
-    :initarg :structured-content
-    :initform nil
-    :reader mcp-call-result-structured-content
-    :type t
+    :initarg       :structured-content
+    :initform      nil
+    :reader        mcp-call-result-structured-content
+    :type          t
     :documentation "The optional structured tool result.")
    (error-p
-    :initarg :error-p
-    :initform nil
-    :reader mcp-call-result-error-p
-    :type boolean
+    :initarg       :error-p
+    :initform      nil
+    :reader        mcp-call-result-error-p
+    :type          boolean
     :documentation "True when the server reports a tool execution error.")
    (raw
-    :initarg :raw
-    :reader mcp-call-result-raw
-    :type hash-table
+    :initarg       :raw
+    :reader        mcp-call-result-raw
+    :type          hash-table
     :documentation "The complete portable CallToolResult object."))
   (:documentation "The ordered and structured result of one MCP tool call."))
 
@@ -208,69 +208,69 @@ interprets it for protocol revisions that define task-augmented requests.")
 
 (defclass mcp-client ()
   ((transport
-    :initarg :transport
-    :reader mcp-client-transport
-    :type mcp-transport
+    :initarg       :transport
+    :reader        mcp-client-transport
+    :type          mcp-transport
     :documentation "The connection transport.")
    (client-info
-    :initarg :client-info
-    :reader mcp-client-client-info
-    :type hash-table
+    :initarg       :client-info
+    :reader        mcp-client-client-info
+    :type          hash-table
     :documentation "The implementation information sent during initialization.")
    (client-capabilities
-    :initarg :client-capabilities
-    :reader mcp-client-client-capabilities
-    :type hash-table
+    :initarg       :client-capabilities
+    :reader        mcp-client-client-capabilities
+    :type          hash-table
     :documentation "The optional client capabilities offered to the server.")
    (startup-timeout
-    :initarg :startup-timeout
-    :reader mcp-client-startup-timeout
-    :type real
+    :initarg       :startup-timeout
+    :reader        mcp-client-startup-timeout
+    :type          real
     :documentation "The initialization and discovery timeout in seconds.")
    (tool-timeout
-    :initarg :tool-timeout
-    :reader mcp-client-tool-timeout
-    :type real
+    :initarg       :tool-timeout
+    :reader        mcp-client-tool-timeout
+    :type          real
     :documentation "The default tool-call timeout in seconds.")
    (lock
-    :initform (make-lock "mcparen client")
-    :reader mcp-client-lock
-    :type t
+    :initform      (make-lock "mcparen client")
+    :reader        mcp-client-lock
+    :type          t
     :documentation "The lock serializing lifecycle and protocol requests.")
    (next-request-identifier
-    :initform 1
-    :accessor mcp-client-next-request-identifier
-    :type (integer 1)
+    :initform      1
+    :accessor      mcp-client-next-request-identifier
+    :type          (integer 1)
     :documentation "The next positive JSON-RPC request identifier.")
    (connection-generation
-    :initform 0
-    :accessor mcp-client--connection-generation
-    :type (integer 0)
+    :initform      0
+    :accessor      mcp-client--connection-generation
+    :type          (integer 0)
     :documentation "The generation distinguishing reinitialized sessions.")
    (connected-p
-    :initform nil
-    :accessor mcp-client-connected-p
-    :type boolean
+    :initform      nil
+    :accessor      mcp-client-connected-p
+    :type          boolean
     :documentation "True after initialization and its ready notification.")
    (protocol-version
-    :initform nil
-    :accessor mcp-client-protocol-version
-    :type t
+    :initform      nil
+    :accessor      mcp-client-protocol-version
+    :type          t
     :documentation "The negotiated MCP protocol version.")
    (server-capabilities
-    :initform nil
-    :accessor mcp-client-server-capabilities
-    :type t
+    :initform      nil
+    :accessor      mcp-client-server-capabilities
+    :type          t
     :documentation "The capabilities returned by the MCP server.")
    (server-info
-    :initform nil
-    :accessor mcp-client-server-info
-    :type t
+    :initform      nil
+    :accessor      mcp-client-server-info
+    :type          t
     :documentation "The implementation information returned by the server.")
    (instructions
-    :initform nil
-    :accessor mcp-client-instructions
-    :type t
+    :initform      nil
+    :accessor      mcp-client-instructions
+    :type          t
     :documentation "Optional server instructions for the client."))
   (:documentation "One restartable, thread-safe MCP client session."))
 
@@ -295,28 +295,28 @@ interprets it for protocol revisions that define task-augmented requests.")
   (unless (typep transport 'mcp-transport)
     (error 'mcp-protocol-error
            :message "An MCP client requires an MCP transport."
-           :method nil
+           :method  nil
            :payload nil))
   (unless (and (plusp (length name)) (plusp (length version)))
     (error 'mcp-protocol-error
            :message "MCP client name and version must be non-empty."
-           :method nil
+           :method  nil
            :payload nil))
   (unless (and (plusp startup-timeout) (plusp tool-timeout))
     (error 'mcp-protocol-error
            :message "MCP startup and tool timeouts must be positive."
-           :method nil
+           :method  nil
            :payload nil))
   (let ((client-info
           (json-object "name" name "version" version)))
     (when title
       (setf (gethash "title" client-info) title))
     (make-instance 'mcp-client
-                   :transport transport
-                   :client-info client-info
+                   :transport           transport
+                   :client-info         client-info
                    :client-capabilities capabilities
-                   :startup-timeout startup-timeout
-                   :tool-timeout tool-timeout)))
+                   :startup-timeout     startup-timeout
+                   :tool-timeout        tool-timeout)))
 
 (-> mcp-client-connection-generation (mcp-client) integer)
 (defun mcp-client-connection-generation (client)
@@ -349,7 +349,7 @@ interprets it for protocol revisions that define task-augmented requests.")
            :message
            (format nil "The MCP response for ~A has invalid JSON-RPC metadata."
                    method)
-           :method method
+           :method  method
            :payload response))
   (multiple-value-bind (rpc-error error-present-p)
       (gethash "error" response)
@@ -359,10 +359,10 @@ interprets it for protocol revisions that define task-augmented requests.")
              (format nil "~A failed: ~A"
                      method
                      (json-get rpc-error "message"))
-             :method method
+             :method  method
              :payload response
-             :code (json-get rpc-error "code")
-             :data (json-get rpc-error "data")))
+             :code    (json-get rpc-error "code")
+             :data    (json-get rpc-error "data")))
     (json-get response "result")))
 
 (-> mcp-client--send-cancellation
@@ -410,7 +410,7 @@ interprets it for protocol revisions that define task-augmented requests.")
 (defun mcp-client--initialize-unlocked (client)
   "Open and initialize CLIENT while its protocol lock is held."
   (mcp-transport-open (mcp-client-transport client))
-  (let* ((identifier (mcp-client--next-identifier-unlocked client))
+  (let* ((identifier        (mcp-client--next-identifier-unlocked client))
          (requested-version *mcp-protocol-version*)
          (result
            (mcp-client--request-with-identifier
@@ -425,7 +425,7 @@ interprets it for protocol revisions that define task-augmented requests.")
     (unless (hash-table-p result)
       (error 'mcp-protocol-error
              :message "The MCP initialize result is not an object."
-             :method "initialize"
+             :method  "initialize"
              :payload result))
     (let ((version (json-get result "protocolVersion")))
       (unless (mcp-protocol-version-supported-p version)
@@ -434,14 +434,14 @@ interprets it for protocol revisions that define task-augmented requests.")
                :message
                (format nil "The MCP server selected unsupported protocol ~S."
                        version)
-               :method "initialize"
+               :method  "initialize"
                :payload result))
       (let ((capabilities (json-get result "capabilities"))
-            (server-info (json-get result "serverInfo")))
+            (server-info  (json-get result "serverInfo")))
         (unless (and
                  (hash-table-p capabilities)
                  (hash-table-p server-info)
-                 (let ((name (json-get server-info "name"))
+                 (let ((name           (json-get server-info "name"))
                        (server-version (json-get server-info "version")))
                    (and (stringp name)
                         (plusp (length name))
@@ -451,17 +451,17 @@ interprets it for protocol revisions that define task-augmented requests.")
           (error 'mcp-protocol-error
                  :message
                  "The MCP initialize result lacks valid capabilities or serverInfo."
-                 :method "initialize"
+                 :method  "initialize"
                  :payload result))
-      (mcp-transport-set-protocol-version
-       (mcp-client-transport client) version)
-      (setf (mcp-client-protocol-version client) version
-            (mcp-client-server-capabilities client)
-            capabilities
-            (mcp-client-server-info client)
-            server-info
-            (mcp-client-instructions client)
-            (json-get result "instructions"))))
+       (mcp-transport-set-protocol-version
+        (mcp-client-transport client) version)
+       (setf (mcp-client-protocol-version client) version
+             (mcp-client-server-capabilities client)
+             capabilities
+             (mcp-client-server-info client)
+             server-info
+             (mcp-client-instructions client)
+             (json-get result "instructions"))))
     (mcp-transport-commit-initialize-session
      (mcp-client-transport client))
     (mcp-transport-notify
@@ -580,7 +580,7 @@ interprets it for protocol revisions that define task-augmented requests.")
              (format nil
                      "The MCP server does not advertise ~A support for ~A."
                      name operation)
-             :method operation
+             :method  operation
              :payload capabilities))
     capability))
 
@@ -609,7 +609,7 @@ interprets it for protocol revisions that define task-augmented requests.")
              (format nil
                      "The MCP pagination ~A limit must be a positive integer."
                      (first bound))
-             :method nil
+             :method  nil
              :payload nil)))
   nil)
 
@@ -653,7 +653,7 @@ SOURCE-NAME names it in any encoding failure."
          (format nil
                  "~A exceeded the pagination ~A safety limit of ~D."
                  method constraint limit)
-         :method method
+         :method  method
          :payload nil))
 
 (-> mcp-client--list-all (mcp-client string string) list)
@@ -667,9 +667,9 @@ SOURCE-NAME names it in any encoding failure."
 
              (read-session (initial-generation)
                "Read one paginated list within INITIAL-GENERATION."
-               (let ((pages nil)
-                     (cursor nil)
-                     (seen-cursors (make-hash-table :test #'equal))
+               (let ((pages           nil)
+                     (cursor          nil)
+                     (seen-cursors    (make-hash-table :test #'equal))
                      (aggregate-items 0)
                      (aggregate-bytes 0)
                      (aggregate-nodes 0))
@@ -686,7 +686,7 @@ SOURCE-NAME names it in any encoding failure."
                                    (format nil
                                            "~A returned a non-object result."
                                            method)
-                                   :method method
+                                   :method  method
                                    :payload result))
                           (let ((page-items
                                   (json-get result result-key)))
@@ -697,7 +697,7 @@ SOURCE-NAME names it in any encoding failure."
                                      (format nil
                                              "~A returned non-array ~A data."
                                              method result-key)
-                                     :method method
+                                     :method  method
                                      :payload result))
                             (let* ((page-item-count
                                      (length page-items))
@@ -712,7 +712,7 @@ SOURCE-NAME names it in any encoding failure."
                                          (format nil
                                                  "~A returned a non-string cursor."
                                                  method)
-                                         :method method
+                                         :method  method
                                          :payload result))
                                 (when (gethash
                                        next-cursor seen-cursors)
@@ -722,7 +722,7 @@ SOURCE-NAME names it in any encoding failure."
                                           nil
                                           "~A repeated pagination cursor ~S."
                                           method next-cursor)
-                                         :method method
+                                         :method  method
                                          :payload result))
                                 (multiple-value-setq
                                     (cursor-nodes cursor-bytes)
@@ -784,7 +784,7 @@ SOURCE-NAME names it in any encoding failure."
                                          "~A exceeded the ~D-page safety limit."
                                          method
                                          *mcp-pagination-maximum-pages*)
-                                 :method method
+                                 :method  method
                                  :payload nil)))))
       (loop repeat *mcp-pagination-restart-limit*
             do
@@ -798,7 +798,7 @@ SOURCE-NAME names it in any encoding failure."
                       (format nil
                               "~A changed sessions ~D times during pagination."
                               method *mcp-pagination-restart-limit*)
-                      :method method
+                      :method  method
                       :payload nil)))))
 
 (-> mcp-client--raw->tool (t &optional t) mcp-tool)
@@ -808,15 +808,15 @@ SOURCE-NAME names it in any encoding failure."
   (unless (hash-table-p raw)
     (error 'mcp-protocol-error
            :message "tools/list returned a non-object tool."
-           :method "tools/list"
+           :method  "tools/list"
            :payload raw))
-  (let ((name (json-get raw "name"))
-        (title (json-get raw "title" :absent))
-        (description (json-get raw "description" :absent))
-        (input-schema (json-get raw "inputSchema"))
+  (let ((name          (json-get raw "name"))
+        (title         (json-get raw "title" :absent))
+        (description   (json-get raw "description" :absent))
+        (input-schema  (json-get raw "inputSchema"))
         (output-schema (json-get raw "outputSchema" :absent))
-        (annotations (json-get raw "annotations" :absent))
-        (execution (json-get raw "execution" :absent)))
+        (annotations   (json-get raw "annotations" :absent))
+        (execution     (json-get raw "execution" :absent)))
     (unless (and (stringp name)
                  (plusp (length name))
                  (or (eq title :absent) (stringp title))
@@ -830,13 +830,13 @@ SOURCE-NAME names it in any encoding failure."
                            "object"))))
       (error 'mcp-protocol-error
              :message "tools/list returned invalid tool metadata."
-             :method "tools/list"
+             :method  "tools/list"
              :payload raw))
     (unless (eq annotations :absent)
       (unless (hash-table-p annotations)
         (error 'mcp-protocol-error
                :message "tools/list returned malformed tool annotations."
-               :method "tools/list"
+               :method  "tools/list"
                :payload raw))
       (multiple-value-bind (annotation-title title-present-p)
           (gethash "title" annotations)
@@ -845,7 +845,7 @@ SOURCE-NAME names it in any encoding failure."
           (error 'mcp-protocol-error
                  :message
                  "tools/list returned a non-string annotation title."
-                 :method "tools/list"
+                 :method  "tools/list"
                  :payload raw)))
       (dolist (key '("readOnlyHint"
                      "destructiveHint"
@@ -860,7 +860,7 @@ SOURCE-NAME names it in any encoding failure."
                    (format nil
                            "tools/list returned non-boolean annotation ~A."
                            key)
-                   :method "tools/list"
+                   :method  "tools/list"
                    :payload raw)))))
     (let ((task-support "forbidden"))
       (when (and
@@ -869,7 +869,7 @@ SOURCE-NAME names it in any encoding failure."
         (unless (hash-table-p execution)
           (error 'mcp-protocol-error
                  :message "tools/list returned malformed tool execution metadata."
-                 :method "tools/list"
+                 :method  "tools/list"
                  :payload raw))
         (multiple-value-bind (value present-p)
             (gethash "taskSupport" execution)
@@ -883,12 +883,12 @@ SOURCE-NAME names it in any encoding failure."
               (error 'mcp-protocol-error
                      :message
                      "tools/list returned an invalid execution taskSupport value."
-                     :method "tools/list"
+                     :method  "tools/list"
                      :payload raw))
             (setf task-support value))))
       (make-instance 'mcp-tool
-                     :name name
-                     :title (unless (eq title :absent) title)
+                     :name         name
+                     :title        (unless (eq title :absent) title)
                      :description
                      (if (eq description :absent) "" description)
                      :input-schema input-schema
@@ -899,7 +899,7 @@ SOURCE-NAME names it in any encoding failure."
                      :execution
                      (unless (eq execution :absent) execution)
                      :task-support task-support
-                     :raw raw))))
+                     :raw          raw))))
 
 (-> mcp-client--optional-string-field-p (hash-table string) boolean)
 (defun mcp-client--optional-string-field-p (object key)
@@ -965,19 +965,19 @@ SOURCE-NAME names it in any encoding failure."
   (unless (typep tool 'mcp-tool)
     (error 'mcp-protocol-error
            :message "An MCP tool call requires discovered tool metadata."
-           :method "tools/call"
+           :method  "tools/call"
            :payload tool))
   (when (mcp-tool-task-required-p tool)
     (error 'mcp-task-execution-unsupported
            :message
            "That MCP tool requires task execution, which this client does not support."
-           :method "tools/call"
+           :method  "tools/call"
            :payload (mcp-tool-raw tool)
-           :tool tool))
+           :tool    tool))
   (unless (hash-table-p arguments)
     (error 'mcp-protocol-error
            :message "MCP tool arguments must be a JSON object."
-           :method "tools/call"
+           :method  "tools/call"
            :payload arguments))
   (mcp-client--require-capability client "tools" "tools/call")
   (let ((result
@@ -991,14 +991,14 @@ SOURCE-NAME names it in any encoding failure."
     (unless (hash-table-p result)
       (error 'mcp-protocol-error
              :message "tools/call returned a non-object result."
-             :method "tools/call"
+             :method  "tools/call"
              :payload result))
     (let ((content (json-sequence->list (json-get result "content"))))
       (unless (and (every #'hash-table-p content)
                    (every #'mcp-client--content-block-valid-p content))
         (error 'mcp-protocol-error
                :message "tools/call returned an invalid content block."
-               :method "tools/call"
+               :method  "tools/call"
                :payload result))
       (multiple-value-bind (error-value error-present-p)
           (gethash "isError" result)
@@ -1006,7 +1006,7 @@ SOURCE-NAME names it in any encoding failure."
                    (not (json-boolean-p error-value)))
           (error 'mcp-protocol-error
                  :message "tools/call returned a non-boolean isError value."
-                 :method "tools/call"
+                 :method  "tools/call"
                  :payload result))
         (multiple-value-bind (structured structured-present-p)
             (gethash "structuredContent" result)
@@ -1015,7 +1015,7 @@ SOURCE-NAME names it in any encoding failure."
             (error 'mcp-protocol-error
                    :message
                    "tools/call returned non-object structuredContent."
-                   :method "tools/call"
+                   :method  "tools/call"
                    :payload result)))
         (make-instance 'mcp-call-result
                        :content content
@@ -1023,7 +1023,7 @@ SOURCE-NAME names it in any encoding failure."
                        (json-get result "structuredContent")
                        :error-p (and error-present-p
                                      (json-true-p error-value))
-                       :raw result)))))
+                       :raw     result)))))
 
 (-> mcp-client-list-resources (mcp-client) list)
 (defun mcp-client-list-resources (client)
@@ -1049,7 +1049,7 @@ SOURCE-NAME names it in any encoding failure."
     (unless (hash-table-p result)
       (error 'mcp-protocol-error
              :message "resources/read returned a non-object result."
-             :method "resources/read"
+             :method  "resources/read"
              :payload result))
     result))
 
@@ -1072,6 +1072,6 @@ SOURCE-NAME names it in any encoding failure."
       (unless (hash-table-p result)
         (error 'mcp-protocol-error
                :message "prompts/get returned a non-object result."
-               :method "prompts/get"
+               :method  "prompts/get"
                :payload result))
       result)))

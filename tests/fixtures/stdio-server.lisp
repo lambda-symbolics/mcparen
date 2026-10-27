@@ -154,7 +154,7 @@
              (json-get request "id" :absent)
              "fixture-server-request"))
        (let* ((result (json-get request "result"))
-              (role (json-get result "role")))
+              (role   (json-get result "role")))
          (write-json
           (response
            *server-request-parent*
@@ -198,7 +198,7 @@
        (write-json (response request (json-object "tools" #()))))
       ((string= method "tools/call")
        (let* ((params (json-get request "params"))
-              (name (json-get params "name")))
+              (name   (json-get params "name")))
          (format *error-output* "received:~A~%" name)
          (finish-output *error-output*)
          (cond
@@ -276,9 +276,9 @@
            (handle-request
             (yason:parse
              line
-             :json-arrays-as-vectors t
+             :json-arrays-as-vectors   t
              :json-booleans-as-symbols t
-             :json-nulls-as-keyword t)))
+             :json-nulls-as-keyword    t)))
 
 #+sb-thread
 (dolist (worker *workers*)

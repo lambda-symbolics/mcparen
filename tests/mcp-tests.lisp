@@ -12,9 +12,9 @@
          (client
            (make-mcp-client
             transport
-            :name "fixture-client"
-            :version "9"
-            :title "Fixture Client"
+            :name         "fixture-client"
+            :version      "9"
+            :title        "Fixture Client"
             :capabilities client-capabilities)))
     (unwind-protect
          (progn
@@ -41,7 +41,7 @@
            (let* ((request
                     (first
                      (test-scripted-transport-requests transport)))
-                  (params (json-get request "params"))
+                  (params      (json-get request "params"))
                   (client-info (json-get params "clientInfo")))
              (test-equal "initialize"
                          (json-get request "method")
@@ -115,7 +115,7 @@
                  (t
                   (error "Unexpected older-protocol method ~S." method))))))
     (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport)))
+           (client    (make-mcp-client transport)))
       (unwind-protect
            (progn
              (mcp-client-connect client)
@@ -297,9 +297,9 @@
                   (error "Unexpected pagination test method ~S."
                          method))))))
     (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport)))
+           (client    (make-mcp-client transport)))
       (unwind-protect
-           (let ((tools (mcp-client-list-tools client))
+           (let ((tools     (mcp-client-list-tools client))
                  (resources (mcp-client-list-resources client)))
              (test-equal '("first" "second")
                          (mapcar #'mcp-tool-name tools))
@@ -362,7 +362,7 @@
                  (t
                   (error "Unexpected prompt test method ~S." method))))))
     (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport)))
+           (client    (make-mcp-client transport)))
       (unwind-protect
            (let ((prompt
                    (mcp-client-get-prompt client "summary")))
@@ -384,7 +384,7 @@
                    "resources" #()
                    "nextCursor" "repeated")))))
     (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport)))
+           (client    (make-mcp-client transport)))
       (unwind-protect
            (let ((condition
                    (test-signals mcp-protocol-error
@@ -428,8 +428,8 @@
                           (resource "one")
                           (resource "two"))
                          "nextCursor" "second")))))))
-    (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport))
+    (let* ((transport                      (make-test-scripted-transport #'handler))
+           (client                         (make-mcp-client transport))
            (*mcp-pagination-maximum-items* 3))
       (unwind-protect
            (let ((condition
@@ -454,10 +454,10 @@
                         (cursor
                           (and params
                                (json-get params "cursor")))
-                       (resource
-                         (json-object
-                          "uri"
-                          (make-string 40 :initial-element #\x))))
+                        (resource
+                          (json-object
+                           "uri"
+                           (make-string 40 :initial-element #\x))))
                    (if cursor
                        (test-rpc-result
                         request
@@ -467,8 +467,8 @@
                         (json-object
                          "resources" (vector resource)
                          "nextCursor" "second")))))))
-    (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport))
+    (let* ((transport                                (make-test-scripted-transport #'handler))
+           (client                                   (make-mcp-client transport))
            (*mcp-pagination-maximum-aggregate-bytes* 105))
       (unwind-protect
            (let ((condition
@@ -489,11 +489,11 @@
              (declare (ignore transport))
              (if (string= (json-get request "method") "initialize")
                  (test-rpc-result request (test-initialize-result))
-                 (let* ((params (json-get request "params"))
+                 (let* ((params   (json-get request "params"))
                         (cursor
                           (and params
                                (json-get params "cursor")))
-                       (resource (json-object "uri" "fixture")))
+                        (resource (json-object "uri" "fixture")))
                    (if cursor
                        (test-rpc-result
                         request
@@ -503,8 +503,8 @@
                         (json-object
                          "resources" (vector resource)
                          "nextCursor" "second")))))))
-    (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport))
+    (let* ((transport                                (make-test-scripted-transport #'handler))
+           (client                                   (make-mcp-client transport))
            (*mcp-pagination-maximum-aggregate-nodes* 8))
       (unwind-protect
            (let ((condition
@@ -535,8 +535,8 @@
                            (length
                             (test-scripted-transport-requests
                              transport))))))))
-    (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport))
+    (let* ((transport                      (make-test-scripted-transport #'handler))
+           (client                         (make-mcp-client transport))
            (*mcp-pagination-maximum-pages* 2))
       (unwind-protect
            (let ((condition
@@ -561,7 +561,7 @@
                   request -32042 "Fixture refused"
                   (json-object "retryable" (json-false))))))
     (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport)))
+           (client    (make-mcp-client transport)))
       (unwind-protect
            (let ((condition
                    (test-signals mcp-rpc-error
@@ -607,7 +607,7 @@
                   (error "Unexpected tool-result test method ~S."
                          method))))))
     (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport)))
+           (client    (make-mcp-client transport)))
       (unwind-protect
            (let* ((result
                     (mcp-client-call-tool
@@ -637,7 +637,7 @@
             (json-decode
              (format nil "{\"payload\":\"~A\"}"
                      (make-string 256 :initial-element #\x))
-             :limit 64
+             :limit       64
              :source-name "test JSON input"))))
     (test-equal 64 (mcp-message-too-large-limit condition))
     (test-equal "test JSON input"
@@ -647,7 +647,7 @@
           (test-signals mcp-message-too-large
             (json-encode
              (json-object "payload" (make-string 256))
-             :limit 64
+             :limit       64
              :source-name "test outbound JSON"))))
     (test-equal 64 (mcp-message-too-large-limit condition))
     (test-equal "test outbound JSON"
@@ -661,7 +661,7 @@
            (make-string 100000 :initial-element #\[)
            (make-string 100000 :initial-element #\])))
         (deep-value 0)
-        (cycle (make-array 1)))
+        (cycle      (make-array 1)))
     (loop repeat 100000
           do (setf deep-value (vector deep-value)))
     (setf (aref cycle 0) cycle)
@@ -931,7 +931,7 @@
                  (t
                   (error "Unexpected method ~S." method))))))
     (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport))
+           (client    (make-mcp-client transport))
            (forbidden
              (test-tool
               "forbidden"
@@ -976,7 +976,7 @@
                    "content" #()
                    "isError" "true")))))
     (let* ((transport (make-test-scripted-transport #'handler))
-           (client (make-mcp-client transport)))
+           (client    (make-mcp-client transport)))
       (unwind-protect
            (test-signals mcp-protocol-error
              (mcp-client-call-tool
@@ -1095,11 +1095,11 @@
             (lambda (ignored request)
               (declare (ignore ignored))
               (error 'mcp-timeout
-                     :message "Fixture initialization timed out."
+                     :message   "Fixture initialization timed out."
                      :transport nil
-                     :cause nil
+                     :cause     nil
                      :operation (json-get request "method")
-                     :seconds 0.01))))
+                     :seconds   0.01))))
          (client
            (make-mcp-client
             transport :startup-timeout 0.01)))
@@ -1129,7 +1129,7 @@
                      (test-rpc-result
                       request (json-object "tools" #()))))))
       (let* ((transport (make-test-scripted-transport #'handler))
-             (client (make-mcp-client transport)))
+             (client    (make-mcp-client transport)))
         (unwind-protect
              (test-signals mcp-protocol-error
                (mcp-client-list-tools client))
@@ -1147,9 +1147,9 @@
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 2))
-         (slow nil)
-         (fast nil))
+            :tool-timeout    2))
+         (slow      nil)
+         (fast      nil))
     (unwind-protect
          (progn
            (mcp-client-connect client)
@@ -1205,7 +1205,7 @@
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 0.1)))
+            :tool-timeout    0.1)))
     (unwind-protect
          (progn
            (mcp-client-connect client)
@@ -1311,8 +1311,8 @@
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 2))
-         (text "Příliš žluťoučký kůň úpěl ďábelské ódy 😀"))
+            :tool-timeout    2))
+         (text      "Příliš žluťoučký kůň úpěl ďábelské ódy 😀"))
     (unwind-protect
          (let ((result
                  (mcp-client-call-tool
@@ -1339,7 +1339,7 @@
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 2)))
+            :tool-timeout    2)))
     (unwind-protect
          (progn
            (test-equal
@@ -1375,7 +1375,7 @@
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 3)))
+            :tool-timeout    3)))
     (unwind-protect
          (progn
            (test-equal
@@ -1406,7 +1406,7 @@
 (define-test stdio-projects-inbound-data-before-retention
   (let* ((received-method nil)
          (received-params nil)
-         (input (make-string-output-stream))
+         (input           (make-string-output-stream))
          (transport
            (make-mcp-stdio-transport
             "/bin/true"
@@ -1471,7 +1471,7 @@
     (test-assert
      (null (mcp-stdio-transport-callback-queue transport)))
     (let* ((identifier 77)
-           (pending (make-instance 'mcp-stdio-pending-request))
+           (pending    (make-instance 'mcp-stdio-pending-request))
            (raw-result (json-object "value" "raw response"))
            (raw-response
              (json-object
@@ -1511,7 +1511,7 @@
      transport
      (make-condition
       'simple-error
-      :format-control "raw reader failure"
+      :format-control   "raw reader failure"
       :format-arguments nil))
     (test-equal
      "projected reader failure"
@@ -1527,7 +1527,7 @@
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 3)))
+            :tool-timeout    3)))
     (unwind-protect
          (let ((condition
                  (test-signals mcp-message-too-large
@@ -1545,12 +1545,12 @@
           nil)))))
 
 (define-test stdio-reader-failure-reconnects-on-the-next-request
-  (let* ((transport (make-test-stdio-transport))
+  (let* ((transport                (make-test-stdio-transport))
          (client
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 2))
+            :tool-timeout    2))
          (first-process-identifier nil))
     (unwind-protect
          (progn
@@ -1578,9 +1578,9 @@
           nil)))))
 
 (define-test stdio-callbacks-run-serially-in-wire-order
-  (let ((callback-lock (make-lock "mcparen callback-order test"))
-        (received nil)
-        (active 0)
+  (let ((callback-lock  (make-lock "mcparen callback-order test"))
+        (received       nil)
+        (active         0)
         (maximum-active 0))
     (let* ((transport
              (make-test-stdio-transport
@@ -1601,7 +1601,7 @@
              (make-mcp-client
               transport
               :startup-timeout 3
-              :tool-timeout 3)))
+              :tool-timeout    3)))
       (unwind-protect
            (progn
              (test-equal
@@ -1640,7 +1640,7 @@
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 3)))
+            :tool-timeout    3)))
     (unwind-protect
          (progn
            (test-signals mcp-error
@@ -1682,7 +1682,7 @@
               :capabilities
               (json-object "sampling" (json-object))
               :startup-timeout 3
-              :tool-timeout 2)))
+              :tool-timeout    2)))
       (setf client created-client)
       (unwind-protect
            (let ((result
@@ -1702,7 +1702,7 @@
   (let* ((transport (make-test-stdio-transport))
          (client
            (make-mcp-client transport :startup-timeout 3))
-         (process nil))
+         (process   nil))
     (mcp-client-connect client)
     (setf process (mcp-stdio-transport-process transport))
     (test-assert (uiop:process-alive-p process))
@@ -1724,12 +1724,12 @@
           nil))))))
 
 (define-test stdio-close-terminates-process-group-children
-  (let* ((transport (make-test-stdio-transport))
+  (let* ((transport        (make-test-stdio-transport))
          (client
            (make-mcp-client
             transport
             :startup-timeout 3
-            :tool-timeout 2))
+            :tool-timeout    2))
          (child-identifier nil))
     (unwind-protect
          (let* ((result
@@ -1762,7 +1762,7 @@
   (let* ((transport (make-test-stdio-transport))
          (client
            (make-mcp-client transport :startup-timeout 3))
-         (process nil))
+         (process   nil))
     (unwind-protect
          (progn
            (mcp-client-connect client)
@@ -1805,7 +1805,7 @@
              (make-condition
               'mcp-protocol-error
               :message "server-diagnostic-sentinel"
-              :method "fixture"
+              :method  "fixture"
               :payload
               (json-object
                "value" "server-diagnostic-sentinel"))))
@@ -1831,6 +1831,7 @@
           (search
            "server-diagnostic-sentinel"
            (mcp-error-message closure))))))))
+
 
 ;;;; -- Streamable HTTP Transport Tests --
 
@@ -1903,7 +1904,7 @@
        (sleep 0.02)))))
 
 (define-test http-exchange-scope-encloses-normal-response-processing
-  (let* ((scope (make-instance 'test-http-exchange-scope))
+  (let* ((scope             (make-instance 'test-http-exchange-scope))
          (base-scope-function
            (test-http-exchange-scope-function scope))
          (parsed-response-p nil))
@@ -1959,7 +1960,7 @@
       (test-equal 1 maximum-active))))
 
 (define-test http-exchange-scope-unwinds-after-response-failure
-  (let* ((scope (make-instance 'test-http-exchange-scope))
+  (let* ((scope                      (make-instance 'test-http-exchange-scope))
          (base-scope-function
            (test-http-exchange-scope-function scope))
          (saw-failure-inside-scope-p nil))
@@ -2008,13 +2009,13 @@
       (test-equal 1 maximum-active))))
 
 (define-test http-exchange-scope-encloses-sse-resumption
-  (let* ((scope (make-instance 'test-http-exchange-scope))
+  (let* ((scope                   (make-instance 'test-http-exchange-scope))
          (base-scope-function
            (test-http-exchange-scope-function scope))
-         (request nil)
+         (request                 nil)
          (header-resolution-count 0)
-         (saw-notification-p nil)
-         (parsed-response-p nil))
+         (saw-notification-p      nil)
+         (parsed-response-p       nil))
     (labels ((handler (server http-request)
                "Split one response across an initial SSE stream and a GET."
                (declare (ignore server))
@@ -2099,10 +2100,10 @@
       (test-equal 1 maximum-active))))
 
 (define-test http-exchange-scope-wraps-each-idle-listener-cycle
-  (let ((scope (make-instance 'test-http-exchange-scope))
-        (get-count 0)
+  (let ((scope                   (make-instance 'test-http-exchange-scope))
+        (get-count               0)
         (header-resolution-count 0)
-        (saw-notification-p nil))
+        (saw-notification-p      nil))
     (labels ((handler (server request)
                "Send one idle event, then reject the resumed idle GET."
                (declare (ignore server))
@@ -2181,7 +2182,7 @@
       (test-equal 1 maximum-active))))
 
 (define-test http-exchange-scope-encloses-session-delete
-  (let ((scope (make-instance 'test-http-exchange-scope))
+  (let ((scope        (make-instance 'test-http-exchange-scope))
         (saw-delete-p nil))
     (labels ((handler (server request)
                "Accept one authenticated session deletion."
@@ -2225,8 +2226,8 @@
 
 (define-test http-supports-json-notification-session-and-close
   (let ((saw-initialized-p nil)
-        (saw-ping-p nil)
-        (saw-delete-p nil))
+        (saw-ping-p        nil)
+        (saw-delete-p      nil))
     (labels ((handler (server request)
                "Serve a stateful JSON MCP session."
                (declare (ignore server))
@@ -2236,7 +2237,7 @@
                    "session-json"
                    (test-http--header request "mcp-session-id")
                    :test #'string=)
-                 (setf saw-delete-p t)
+                  (setf saw-delete-p t)
                   (values
                    202
                    (list
@@ -2310,7 +2311,7 @@
 
 (define-test http-uses-negotiated-protocol-in-subsequent-headers
   (let ((saw-initialized-p nil)
-        (saw-ping-p nil))
+        (saw-ping-p        nil))
     (labels ((handler (server request)
                "Select MCP 2025-06-18 and inspect later request headers."
                (declare (ignore server))
@@ -2498,7 +2499,7 @@
 
 (define-test http-accepts-repeated-session-headers
   (let ((delete-count 0)
-        (ping-count 0))
+        (ping-count   0))
     (labels ((handler (server request)
                "Repeat the active session header, then return a changed one."
                (declare (ignore server))
@@ -2758,7 +2759,7 @@
                  (make-mcp-client
                   transport
                   :startup-timeout 2
-                  :tool-timeout 0.08)))
+                  :tool-timeout    0.08)))
           (unwind-protect
                (progn
                  (mcp-client-connect client)
@@ -2818,7 +2819,7 @@
                    200
                    (list
                     (cons "Content-Type" "text/event-stream"))
-                    (test-sse-resume-body
+                   (test-sse-resume-body
                     "resume-two"
                     20
                     (test-rpc-result
@@ -2857,7 +2858,7 @@
                   (test-http-server-url server)))
                (client (make-mcp-client transport)))
           (unwind-protect
-               (let* ((started (get-internal-real-time))
+               (let* ((started  (get-internal-real-time))
                       (response (mcp-client-ping client))
                       (elapsed
                         (/
@@ -3028,7 +3029,7 @@
           (mcp-transport-close transport))))))
 
 (define-test http-supports-sse-server-messages-and-202-response
-  (let ((notifications nil)
+  (let ((notifications   nil)
         (client-response nil))
     (labels ((handler (server request)
                "Serve one SSE exchange containing server messages."
@@ -3128,7 +3129,7 @@
 
 (define-test http-reinitializes-on-expired-session
   (let ((initialize-count 0)
-        (expired-p nil))
+        (expired-p        nil))
     (labels ((handler (server request)
                "Expire the first stateful HTTP session once."
                (declare (ignore server))
@@ -3211,7 +3212,7 @@
                  (mcp-client-connect client)
                  (test-equal
                   1
-                 (mcp-client-connection-generation client))
+                  (mcp-client-connection-generation client))
                  (let ((resources
                          (mcp-client-list-resources client)))
                    (test-equal 2 initialize-count)
@@ -3231,8 +3232,8 @@
             (mcp-client-close client)))))))
 
 (define-test http-idle-get-delivers-notifications-and-server-requests
-  (let ((idle-get-count 0)
-        (notifications nil)
+  (let ((idle-get-count  0)
+        (notifications   nil)
         (client-response nil))
     (labels ((handler (server request)
                "Serve unsolicited messages through one owned idle GET."
@@ -3353,9 +3354,9 @@
             (mcp-client-close client)))))))
 
 (define-test http-idle-get-resumes-with-event-identifier-and-retry
-  (let ((get-times nil)
+  (let ((get-times              nil)
         (last-event-identifiers nil)
-        (notifications nil))
+        (notifications          nil))
     (labels ((handler (server request)
                "Close idle streams and observe their resumptions."
                (declare (ignore server))
@@ -3507,7 +3508,7 @@
 
 (define-test http-idle-get-404-reinitializes-at-next-client-boundary
   (let ((initialize-count 0)
-        (idle-get-count 0))
+        (idle-get-count   0))
     (labels ((handler (server request)
                "Expire the first session from its owned idle GET."
                (declare (ignore server))
@@ -3586,9 +3587,9 @@
             (mcp-client-close client)))))))
 
 (define-test http-close-stops-idle-listener-before-delete
-  (let ((delete-count 0)
+  (let ((delete-count                     0)
         (listener-stopped-before-delete-p nil)
-        (transport nil))
+        (transport                        nil))
     (labels ((handler (server request)
                "Hold an idle GET open and observe close ordering."
                (declare (ignore server))
@@ -3667,7 +3668,7 @@
             (mcp-http-transport-listener-body transport))))))))
 
 (define-test http-detach-stops-idle-listener-without-delete-or-fd-leak
-  (let ((delete-count 0)
+  (let ((delete-count     0)
         (initialize-count 0))
     (labels ((handler (server request)
                "Hold one idle GET open for each detached session."
@@ -3820,7 +3821,7 @@
   (let ((idle-get-count 0)
         (old-limit
           *mcp-http-idle-no-progress-resumption-limit*)
-        (client nil))
+        (client         nil))
     (labels ((handler (server request)
                "Close idle streams without emitting valid events."
                (declare (ignore server))

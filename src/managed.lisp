@@ -27,36 +27,46 @@
 
 (defparameter *mcp-maximum-retained-input-schema-bytes* (* 8 1024 1024)
   "Default aggregate encoded input schema budget for managed discovery.")
+
 (defparameter *mcp-tool-discovery-restart-limit* 8
   "Maximum attempts to discover tools within one connection generation.")
 
 (defgeneric mcp-managed-call-with-scope (server function)
   (:documentation "Invoke FUNCTION synchronously inside SERVER's credential scope."))
+
 (defgeneric mcp-managed-call-with-cleanup (server function)
   (:documentation "Invoke cleanup FUNCTION even when credential resolution fails."))
+
 (defgeneric mcp-managed-prepare-client (server)
   (:documentation "Project retained server-controlled metadata inside the active scope."))
+
 (defgeneric mcp-managed-reset-client (server)
   (:documentation "Forget retained connection metadata and credential identity."))
+
 (defgeneric mcp-managed-check-credentials (server)
   (:documentation "Invalidate a connection after credential rotation, under its lock."))
+
 (defgeneric mcp-managed-credential-check-p (server)
   (:documentation "Return true when a ready connection needs credential checks."))
+
 (defgeneric mcp-managed-prepare-tools (server tools &key allocated-schema-bytes)
   (:documentation "Return validated TOOLS and their encoded input schema byte count."))
+
 (defgeneric mcp-managed-error (server cause &optional message)
   (:documentation "Signal a structured discovery failure with application-safe details."))
+
 (defgeneric mcp-managed-budget-error (server &key resource allocated requested limit)
   (:documentation "Signal an aggregate discovery budget failure."))
+
 (defgeneric mcp-managed-failure (server cause)
   (:documentation "Return a bounded diagnostic safe to retain outside a secret scope."))
+
 (defgeneric mcp-managed-cached-error (server)
   (:documentation "Reconstruct a structured failure from SERVER's retained diagnostic."))
 
 (defun mcp-managed--bounded-string (value &key (limit 1000))
   "Return at most LIMIT characters from VALUE."
   (subseq value 0 (min limit (length value))))
-
 
 (defclass mcp-managed-server ()
   ((name :initarg :name :reader mcp-server-runtime-name :type string
@@ -66,7 +76,7 @@
    (client :initarg :client :reader mcp-server-runtime-client :type mcp-client
            :documentation "The shared thread-safe client.")
    (client-factory :initarg :client-factory :initform nil
-                   :reader mcp-managed-client-factory
+                   :reader        mcp-managed-client-factory
                    :documentation "Optional function of server and notification handler.")
    (lock :initform (make-lock "MCP managed server") :reader mcp-server-runtime-lock
          :documentation "Serializes discovery and status publication.")
@@ -90,8 +100,8 @@
     :documentation "The connection generation of published discovery.")
    (tools-change-version :initform 0 :accessor mcp-server-runtime-tools-change-version
                          :type (integer 0) :documentation "Latest requested version.")
-   (tools-change-lock :initform (make-lock "MCP discovery notifications")
-                      :reader mcp-server-runtime-tools-change-lock
+   (tools-change-lock :initform      (make-lock "MCP discovery notifications")
+                      :reader        mcp-server-runtime-tools-change-lock
                       :documentation "Independent lock for reentrant notifications.")
    (tools-discovered-version
     :initform 0 :accessor mcp-server-runtime-tools-discovered-version
@@ -104,92 +114,50 @@
   ((runtimes :initarg :runtimes :initform nil :reader mcp-manager-runtimes :type list
              :documentation "Owned servers in stable presentation order.")
    (maximum-schema-bytes :initarg :maximum-schema-bytes :initform nil
-                         :reader mcp-manager-maximum-schema-bytes
+                         :reader        mcp-manager-maximum-schema-bytes
                          :documentation "Aggregate schema bound, or NIL for the dynamic default.")
    (lock :initform (make-lock "MCP connection manager") :reader mcp-manager-lock
          :documentation "Serializes discovery and application reconciliation."))
   (:documentation "One lifecycle owner and discovery budget for a set of shared clients."))
 
-
 (-> mcp-server-runtime--connection-current-p (mcp-managed-server) boolean)
-
-
 (-> mcp-server-runtime-tools-stale-p (mcp-managed-server) boolean)
-
-
 (-> mcp-server-runtime-request-tool-refresh (mcp-managed-server) (integer 1))
-
-
 (-> mcp-server-runtime--discover-tools-stably
     (mcp-managed-server &key (:allocated-schema-bytes (integer 0)))
     (values list (integer 0) (integer 0)))
-
-
 (-> mcp-server-runtime--connect
     (mcp-managed-server &key (:allocated-schema-bytes (integer 0)))
     (values mcp-managed-server boolean))
-
-
 (-> mcp-server-runtime-close (mcp-managed-server) null)
-
-
 (-> mcp-server-runtime-detach (mcp-managed-server) null)
-
-
 (-> mcp-manager--close-runtimes (list function) null)
-
-
 (-> mcp-manager-close (mcp-connection-manager) null)
-
-
 (-> mcp-manager-detach (mcp-connection-manager) null)
-
-
 (-> mcp-manager-runtime (mcp-connection-manager string) (or null mcp-managed-server))
-
-
 (-> mcp-manager--ordered-runtimes (mcp-connection-manager) list)
-
-
 (-> mcp-server-runtime--mark-failed (mcp-managed-server mcp-managed-server-error)
     boolean)
-
-
 (-> mcp-server-runtime--budget-usage (mcp-managed-server) (integer 0))
-
-
 (-> mcp-manager--runtime-failure-barrier-p
     (mcp-managed-server (or null mcp-managed-server) boolean) boolean)
-
-
 (-> mcp-server-runtime--manager-connect-p
     (mcp-managed-server (or null mcp-managed-server)) boolean)
-
-
 (-> mcp-manager--connect-runtimes
     (mcp-connection-manager &key (:target-runtime (or null mcp-managed-server))
      (:signal-target-failure-p boolean))
     boolean)
-
-
 (-> mcp-server-runtime-connect (mcp-managed-server)
     (values mcp-managed-server boolean))
-
-
 (-> mcp-server-runtime--discard-connection (mcp-managed-server keyword) null)
-
-
 (-> mcp-server-runtime--capability-p (mcp-managed-server string) boolean)
-
-
 (defun mcp-server-runtime--connection-current-p (runtime)
   "Return true when RUNTIME's tool snapshot covers its live connection."
-  (let* ((client (mcp-server-runtime-client runtime))
+  (let* ((client   (mcp-server-runtime-client runtime))
          (observed (mcp-server-runtime-observed-connection-generation runtime)))
     (and observed (mcp-client-connected-p client)
          (mcp-transport-open-p (mcp-client-transport client))
          (= observed (mcp-client-connection-generation client)) t)))
-
 
 (defun mcp-server-runtime-tools-stale-p (runtime)
   "Return true when RUNTIME needs tool rediscovery or reconciliation."
@@ -201,12 +169,10 @@
      (and (eq (mcp-server-runtime-state runtime) :ready)
           (not (mcp-server-runtime--connection-current-p runtime))))))
 
-
 (defun mcp-server-runtime-request-tool-refresh (runtime)
   "Advance RUNTIME's requested tool discovery version."
   (with-lock-held ((mcp-server-runtime-tools-change-lock runtime))
     (incf (mcp-server-runtime-tools-change-version runtime))))
-
 
 (defun mcp-server-runtime--discover-tools-stably
     (runtime &key (allocated-schema-bytes 0))
@@ -232,7 +198,6 @@
                       (mcp-server-runtime-name runtime)
                       *mcp-tool-discovery-restart-limit*)))))
 
-
 (defun mcp-server-runtime--connect (runtime &key (allocated-schema-bytes 0))
   "Initialize RUNTIME within aggregate budgets and report snapshot publication."
   (let ((discovery-p nil))
@@ -255,15 +220,15 @@
                   (mcp-server-runtime--discover-tools-stably runtime
                    :allocated-schema-bytes allocated-schema-bytes)
                 (setf (mcp-server-runtime-capabilities runtime)
-                        (mcp-managed--copy-value
-                         (mcp-client-server-capabilities
-                          (mcp-server-runtime-client runtime)))
+                      (mcp-managed--copy-value
+                       (mcp-client-server-capabilities
+                        (mcp-server-runtime-client runtime)))
                       (mcp-server-runtime-tools runtime) tools
                       (mcp-server-runtime-tool-schema-bytes runtime) schema-bytes
                       (mcp-server-runtime-observed-connection-generation runtime)
-                        generation
+                      generation
                       (mcp-server-runtime-tools-discovered-version runtime)
-                        target-version
+                      target-version
                       (mcp-server-runtime-state runtime) :ready
                       discovery-p t)
                 (incf (mcp-server-runtime-tools-revision runtime))))))
@@ -273,14 +238,13 @@
           (setf (mcp-server-runtime-tools-discovered-version runtime) target-version
                 (mcp-server-runtime-state runtime) :failed
                 (mcp-server-runtime-failure runtime)
-                  (mcp-managed--bounded-string (mcp-managed-failure runtime cause)
-                   :limit 1000)
+                (mcp-managed--bounded-string (mcp-managed-failure runtime cause)
+                 :limit 1000)
                 discovery-p t)
           (mcp-managed-reset-client runtime)
           (setf (mcp-server-runtime-launch-environment-fingerprint runtime) nil)
           (incf (mcp-server-runtime-tools-revision runtime)) (error cause)))))
     (values runtime discovery-p)))
-
 
 (defun mcp-server-runtime-close (runtime)
   "Close RUNTIME's client and leave it restartable."
@@ -298,7 +262,6 @@
       (mcp-managed-reset-client runtime)))
   nil)
 
-
 (defun mcp-server-runtime-detach (runtime)
   "Detach RUNTIME's inherited resources without signaling their owner."
   (with-lock-held ((mcp-server-runtime-lock runtime))
@@ -315,14 +278,13 @@
       (mcp-managed-reset-client runtime)))
   nil)
 
-
 (defun mcp-manager--close-runtimes (runtimes close-function)
   "Close RUNTIMES concurrently with CLOSE-FUNCTION and signal the first failure.
 Finish pending teardown and join owned workers before propagating a nonlocal exit."
   (let* ((runtime-vector (coerce runtimes 'simple-vector))
-         (failures (make-array (length runtime-vector) :initial-element nil))
-         (next-position 0)
-         (threads nil))
+         (failures       (make-array (length runtime-vector) :initial-element nil))
+         (next-position  0)
+         (threads        nil))
     (labels ((close-at (index)
                (handler-case (funcall close-function (aref runtime-vector index))
                  (serious-condition (condition)
@@ -360,14 +322,12 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
             do (error failure))))
   nil)
 
-
 (defun mcp-manager-close (manager)
   "Close every server in MANAGER concurrently, preserving close-order failures."
   (with-lock-held ((mcp-manager-lock manager))
     (mcp-manager--close-runtimes (reverse (copy-list (mcp-manager-runtimes manager)))
      #'mcp-server-runtime-close)
     nil))
-
 
 (defun mcp-manager-detach (manager)
   "Detach all inherited servers concurrently, serialized against discovery."
@@ -376,12 +336,10 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
      #'mcp-server-runtime-detach))
   nil)
 
-
 (defun mcp-manager-runtime (manager name)
   "Return MANAGER's case-sensitive raw server NAME, or NIL."
   (find name (mcp-manager-runtimes manager) :test #'string= :key
         #'mcp-server-runtime-name))
-
 
 (defun mcp-manager--ordered-runtimes (manager)
   "Return MANAGER runtimes required-first with stable configuration order."
@@ -390,14 +348,13 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
      (remove-if-not (lambda (runtime) (mcp-managed-required-p runtime)) runtimes)
      (remove-if (lambda (runtime) (mcp-managed-required-p runtime)) runtimes))))
 
-
 (defun mcp-server-runtime--mark-failed (runtime condition)
   "Clear RUNTIME tools and publish CONDITION as its visible failure."
   (with-lock-held ((mcp-server-runtime-lock runtime))
-    (let* ((previous-state (mcp-server-runtime-state runtime))
-           (previous-tools-p (not (null (mcp-server-runtime-tools runtime))))
+    (let* ((previous-state        (mcp-server-runtime-state runtime))
+           (previous-tools-p      (not (null (mcp-server-runtime-tools runtime))))
            (previous-schema-bytes (mcp-server-runtime-tool-schema-bytes runtime))
-           (previous-failure (mcp-server-runtime-failure runtime))
+           (previous-failure      (mcp-server-runtime-failure runtime))
            (failure
             (mcp-managed--bounded-string (mcp-managed-failure runtime condition)
              :limit 1000))
@@ -409,14 +366,13 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
                     (error nil (mcp-managed-reset-client runtime)
                            (setf (mcp-server-runtime-launch-environment-fingerprint
                                   runtime)
-                                   nil)))
+                                 nil)))
       (setf (mcp-server-runtime-tools runtime) nil
             (mcp-server-runtime-tool-schema-bytes runtime) 0
             (mcp-server-runtime-state runtime) :failed
             (mcp-server-runtime-failure runtime) failure)
       (when changed-p (incf (mcp-server-runtime-tools-revision runtime)))
       (and changed-p t))))
-
 
 (defun mcp-server-runtime--budget-usage (runtime)
   "Return retained encoded input schema bytes for ready RUNTIME."
@@ -425,13 +381,11 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
         (mcp-server-runtime-tool-schema-bytes runtime)
         0)))
 
-
 (defun mcp-manager--runtime-failure-barrier-p
        (runtime target-runtime signal-target-failure-p)
   "Return true when RUNTIME's failure must cross the current manager boundary."
   (or (and (null target-runtime) (mcp-managed-required-p runtime))
       (and signal-target-failure-p (eq runtime target-runtime))))
-
 
 (defun mcp-server-runtime--manager-connect-p (runtime target-runtime)
   "Return true when RUNTIME needs discovery during manager reconciliation."
@@ -445,15 +399,14 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
                     (member state '(:disconnected :connecting :detached) :test #'eq)
                     t)))))))
 
-
 (defun mcp-manager--connect-runtimes
     (manager &key target-runtime signal-target-failure-p)
   "Reconcile MANAGER under its held lock and return true after any revision."
   (let ((allocated-schema-bytes 0)
-        (changed-p nil))
+        (changed-p              nil))
     (dolist (runtime (mcp-manager--ordered-runtimes manager))
-      (let* ((before (with-lock-held ((mcp-server-runtime-lock runtime))
-                       (mcp-server-runtime-tools-revision runtime)))
+      (let* ((before    (with-lock-held ((mcp-server-runtime-lock runtime))
+                          (mcp-server-runtime-tools-revision runtime)))
              (connect-p (mcp-server-runtime--manager-connect-p runtime target-runtime))
              (cached-failure
                (and (not connect-p) (mcp-server-runtime--cached-failure runtime))))
@@ -467,12 +420,12 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
                 (mcp-server-runtime--connect
                  runtime :allocated-schema-bytes allocated-schema-bytes))
               (let ((schema-bytes (mcp-server-runtime--budget-usage runtime))
-                    (limit (mcp-managed-schema-limit runtime)))
+                    (limit        (mcp-managed-schema-limit runtime)))
                 (when (> (+ allocated-schema-bytes schema-bytes) limit)
                   (mcp-managed-budget-error
                    runtime :resource ':input-schema-bytes
                    :allocated allocated-schema-bytes :requested schema-bytes
-                   :limit limit))
+                   :limit            limit))
                 (incf allocated-schema-bytes schema-bytes)))
           (mcp-managed-server-error (condition)
             (when (mcp-server-runtime--mark-failed runtime condition)
@@ -485,7 +438,6 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
           (setf changed-p t))))
     (and changed-p t)))
 
-
 (defun mcp-server-runtime-connect (runtime)
   "Initialize RUNTIME under its manager-wide aggregate discovery budgets."
   (let ((manager (mcp-server-runtime-manager runtime)))
@@ -493,12 +445,11 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
         (with-lock-held ((mcp-manager-lock manager))
           (values runtime
                   (mcp-manager--connect-runtimes manager :target-runtime runtime
-                   :signal-target-failure-p t)))
+                   :signal-target-failure-p                              t)))
         (let ((cached-failure (mcp-server-runtime--cached-failure runtime)))
           (if (and cached-failure (not (mcp-server-runtime-tools-stale-p runtime)))
               (error cached-failure)
               (mcp-server-runtime--connect runtime))))))
-
 
 (defun mcp-server-runtime--discard-connection (runtime state)
   "Close RUNTIME's client and clear retained connection state to STATE.
@@ -517,14 +468,16 @@ The caller must hold RUNTIME's lock."
           (mcp-server-runtime-state runtime) state))
   nil)
 
-
 (defun mcp-server-runtime--capability-p (runtime name)
   "Return true when RUNTIME's connected server advertises capability NAME."
   (let ((capabilities
          (mcp-client-server-capabilities (mcp-server-runtime-client runtime))))
     (multiple-value-bind (capability present-p)
         (gethash name capabilities)
-      (cond ((not present-p) nil) ((hash-table-p capability) t)
+      (cond ((not present-p)
+             nil)
+            ((hash-table-p capability)
+             t)
             (t
              (mcp-managed-error runtime capability
               (format nil
@@ -544,14 +497,13 @@ The caller must hold RUNTIME's lock."
                      (when (string= method "notifications/tools/list_changed")
                        (mcp-server-runtime-request-tool-refresh server)))))))
 
-
 (defmethod initialize-instance :after ((manager mcp-connection-manager) &key)
   "Validate all identities and ownership before attaching any server."
   (with-lock-held (*mcp-managed-ownership-lock*)
     (let ((seen (make-hash-table :test #'equal)))
       (dolist (server (mcp-manager-runtimes manager))
         (let ((owner (mcp-server-runtime-manager server))
-              (name (mcp-server-runtime-name server)))
+              (name  (mcp-server-runtime-name server)))
           (when (or (gethash name seen) (and owner (not (eq owner manager))))
             (mcp-managed-error server nil
              "Duplicate server identity or existing lifecycle owner."))
@@ -581,7 +533,6 @@ The caller must hold RUNTIME's lock."
           (mcp-client-instructions client) nil))
   nil)
 
-
 (defmethod mcp-managed-check-credentials ((server mcp-managed-server))
   "Check persistent credential identity within the active scope."
   (mcp-managed-check-credential-identity server))
@@ -594,9 +545,9 @@ The caller must hold RUNTIME's lock."
   "Signal a bounded diagnostic for SERVER."
   (error 'mcp-managed-server-error
          :server-name (mcp-server-runtime-name server)
-         :required-p (mcp-managed-required-p server)
-         :cause nil
-         :message (or message (mcp-managed-failure server cause))))
+         :required-p  (mcp-managed-required-p server)
+         :cause       nil
+         :message     (or message (mcp-managed-failure server cause))))
 
 (defmethod mcp-managed-failure ((server mcp-managed-server) cause)
   "Bound the protocol diagnostic; override this boundary for secret redaction."
@@ -608,17 +559,17 @@ The caller must hold RUNTIME's lock."
   "Signal the exact requested and available aggregate schema allocation."
   (error 'mcp-managed-budget-exceeded
          :server-name (mcp-server-runtime-name server)
-         :required-p (mcp-managed-required-p server)
+         :required-p  (mcp-managed-required-p server)
          :resource resource :allocated allocated :requested requested :limit limit
-         :message (format nil "MCP server ~A exceeds ~A budget ~D: ~D allocated, ~D requested."
-                          (mcp-server-runtime-name server) resource limit allocated requested)))
+         :message     (format nil "MCP server ~A exceeds ~A budget ~D: ~D allocated, ~D requested."
+                              (mcp-server-runtime-name server) resource limit allocated requested)))
 
 (defmethod mcp-managed-cached-error ((server mcp-managed-server))
   "Reconstruct a managed error without retaining a transient condition."
   (make-condition 'mcp-managed-server-error
                   :server-name (mcp-server-runtime-name server)
-                  :required-p (mcp-managed-required-p server)
-                  :message (or (mcp-server-runtime-failure server) "MCP server unavailable.")))
+                  :required-p  (mcp-managed-required-p server)
+                  :message     (or (mcp-server-runtime-failure server) "MCP server unavailable.")))
 
 (defun mcp-server-runtime--cached-failure (runtime)
   "Return the last failure without repeating network or credential work."
@@ -647,7 +598,7 @@ The caller must hold RUNTIME's lock."
       (when (> (+ allocated-schema-bytes bytes) (mcp-managed-schema-limit server))
         (mcp-managed-budget-error server :resource ':input-schema-bytes
                                  :allocated allocated-schema-bytes :requested bytes
-                                 :limit (mcp-managed-schema-limit server))))
+                                 :limit            (mcp-managed-schema-limit server))))
     (values tools bytes)))
 
 (defun mcp-manager-start (manager)
@@ -672,7 +623,7 @@ The caller must hold RUNTIME's lock."
       (dolist (server (if target (list target) (mcp-manager-runtimes manager)))
         (mcp-server-runtime-request-tool-refresh server))
       (mcp-manager--connect-runtimes manager :target-runtime target
-                                   :signal-target-failure-p (not (null target))))))
+                                   :signal-target-failure-p  (not (null target))))))
 
 (defun mcp-manager-tool-revisions (manager)
   "Return synchronized discovery revisions in presentation order."
@@ -680,7 +631,6 @@ The caller must hold RUNTIME's lock."
             (with-lock-held ((mcp-server-runtime-lock server))
               (mcp-server-runtime-tools-revision server)))
           (mcp-manager-runtimes manager)))
-
 
 (defgeneric mcp-managed-credential-key (server)
   (:documentation "Return an opaque non-secret identity and an optional resolution failure.

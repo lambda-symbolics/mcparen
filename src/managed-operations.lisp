@@ -16,7 +16,7 @@
   "Guarantee exactly one local teardown attempt when scope entry fails or unwinds.
 Ordinary scope-entry errors use local cleanup. Other nonlocal exits keep their
 original outcome after the local attempt. Never repeat a failed cleanup callback."
-  (let ((started-p nil)
+  (let ((started-p   nil)
         (completed-p nil))
     (labels ((cleanup ()
                (setf started-p t)

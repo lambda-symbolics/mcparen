@@ -46,39 +46,39 @@
 
 (defclass test-scripted-transport (mcp-transport)
   ((handler
-    :initarg :handler
-    :reader test-scripted-transport-handler
-    :type function
+    :initarg       :handler
+    :reader        test-scripted-transport-handler
+    :type          function
     :documentation "The function producing one response for each request.")
    (requests
-    :initform nil
-    :accessor test-scripted-transport-requests
-    :type list
+    :initform      nil
+    :accessor      test-scripted-transport-requests
+    :type          list
     :documentation "Requests observed in chronological order after projection.")
    (notifications
-    :initform nil
-    :accessor test-scripted-transport-notifications
-    :type list
+    :initform      nil
+    :accessor      test-scripted-transport-notifications
+    :type          list
     :documentation "Notifications observed in chronological order after projection.")
    (protocol-version
-    :initform nil
-    :accessor test-scripted-transport-protocol-version
-    :type t
+    :initform      nil
+    :accessor      test-scripted-transport-protocol-version
+    :type          t
     :documentation "The negotiated protocol version.")
    (open-p
-    :initform nil
-    :accessor test-scripted-transport-open-p
-    :type boolean
+    :initform      nil
+    :accessor      test-scripted-transport-open-p
+    :type          boolean
     :documentation "True while this scripted transport is open.")
    (close-count
-    :initform 0
-    :accessor test-scripted-transport-close-count
-    :type (integer 0)
+    :initform      0
+    :accessor      test-scripted-transport-close-count
+    :type          (integer 0)
     :documentation "The number of explicit close operations.")
    (detach-count
-    :initform 0
-    :accessor test-scripted-transport-detach-count
-    :type (integer 0)
+    :initform      0
+    :accessor      test-scripted-transport-detach-count
+    :type          (integer 0)
     :documentation "The number of detach operations."))
   (:documentation "An in-memory transport for deterministic protocol tests."))
 
@@ -102,9 +102,9 @@
   (declare (ignore timeout))
   (unless (mcp-transport-open-p transport)
     (error 'mcp-transport-error
-           :message "The scripted MCP transport is closed."
+           :message   "The scripted MCP transport is closed."
            :transport transport
-           :cause nil))
+           :cause     nil))
   (setf (test-scripted-transport-requests transport)
         (nconc (test-scripted-transport-requests transport)
                (list request)))
@@ -117,9 +117,9 @@
   (declare (ignore timeout))
   (unless (mcp-transport-open-p transport)
     (error 'mcp-transport-error
-           :message "The scripted MCP transport is closed."
+           :message   "The scripted MCP transport is closed."
            :transport transport
-           :cause nil))
+           :cause     nil))
   (setf (test-scripted-transport-notifications transport)
         (nconc (test-scripted-transport-notifications transport)
                (list notification)))
@@ -207,24 +207,24 @@
 
 (defclass test-thread-result ()
   ((thread
-    :initarg :thread
-    :accessor test-thread-result-thread
-    :type t
+    :initarg       :thread
+    :accessor      test-thread-result-thread
+    :type          t
     :documentation "The worker thread.")
    (value
-    :initform nil
-    :accessor test-thread-result-value
-    :type t
+    :initform      nil
+    :accessor      test-thread-result-value
+    :type          t
     :documentation "The value returned by the worker.")
    (condition
-    :initform nil
-    :accessor test-thread-result-condition
-    :type t
+    :initform      nil
+    :accessor      test-thread-result-condition
+    :type          t
     :documentation "The condition signaled by the worker.")
    (finished-p
-    :initform nil
-    :accessor test-thread-result-finished-p
-    :type boolean
+    :initform      nil
+    :accessor      test-thread-result-finished-p
+    :type          boolean
     :documentation "True after the worker has unwound."))
   (:documentation "The observable result of one bounded test worker."))
 
@@ -283,7 +283,7 @@
 (defun test-fixture--system-directories (name)
   "Return the source directories of system NAME and everything it depends on."
   (let ((directories nil)
-        (visited nil))
+        (visited     nil))
     (labels ((visit (system-name)
                (let ((system (asdf:find-system system-name)))
                  (unless (member (asdf:component-name system) visited
@@ -328,11 +328,11 @@ so it starts without crawling every system the host happens to have."
   "Return a stdio transport connected to the local Common Lisp fixture."
   (make-mcp-stdio-transport
    (namestring sb-ext:*runtime-pathname*)
-   :arguments (test-fixture-script-arguments "stdio-server.lisp")
+   :arguments            (test-fixture-script-arguments "stdio-server.lisp")
    :maximum-message-characters
    (or maximum-message-characters
        *mcp-maximum-message-characters*)
-   :request-handler request-handler
+   :request-handler      request-handler
    :notification-handler notification-handler
    :ingress-projector
    (or ingress-projector
@@ -348,60 +348,60 @@ so it starts without crawling every system the host happens to have."
 
 (defclass test-http-request ()
   ((method
-    :initarg :method
-    :reader test-http-request-method
-    :type string
+    :initarg       :method
+    :reader        test-http-request-method
+    :type          string
     :documentation "The request method.")
    (target
-    :initarg :target
-    :reader test-http-request-target
-    :type string
+    :initarg       :target
+    :reader        test-http-request-target
+    :type          string
     :documentation "The request target.")
    (headers
-    :initarg :headers
-    :reader test-http-request-headers
-    :type list
+    :initarg       :headers
+    :reader        test-http-request-headers
+    :type          list
     :documentation "The lower-case request headers.")
    (body
-    :initarg :body
-    :reader test-http-request-body
-    :type string
+    :initarg       :body
+    :reader        test-http-request-body
+    :type          string
     :documentation "The request body."))
   (:documentation "One request observed by the local HTTP fixture."))
 
 (defclass test-http-streaming-body ()
   ((writer
-    :initarg :writer
-    :reader test-http-streaming-body-writer
-    :type function
+    :initarg       :writer
+    :reader        test-http-streaming-body-writer
+    :type          function
     :documentation "The function writing a response body to its live stream."))
   (:documentation "A fixture response body written after headers are flushed."))
 
 (defclass test-http-exchange-scope ()
   ((lock
-    :initform (make-lock "mcparen HTTP exchange scope fixture")
-    :reader test-http-exchange-scope-lock
-    :type t
+    :initform      (make-lock "mcparen HTTP exchange scope fixture")
+    :reader        test-http-exchange-scope-lock
+    :type          t
     :documentation "The lock protecting scope counters.")
    (entry-count
-    :initform 0
-    :accessor test-http-exchange-scope-entry-count
-    :type (integer 0)
+    :initform      0
+    :accessor      test-http-exchange-scope-entry-count
+    :type          (integer 0)
     :documentation "The number of completed scope entries.")
    (leave-count
-    :initform 0
-    :accessor test-http-exchange-scope-leave-count
-    :type (integer 0)
+    :initform      0
+    :accessor      test-http-exchange-scope-leave-count
+    :type          (integer 0)
     :documentation "The number of completed scope leaves.")
    (active-count
-    :initform 0
-    :accessor test-http-exchange-scope-active-count
-    :type (integer 0)
+    :initform      0
+    :accessor      test-http-exchange-scope-active-count
+    :type          (integer 0)
     :documentation "The number of scopes active in all fixture threads.")
    (maximum-active-count
-    :initform 0
-    :accessor test-http-exchange-scope-maximum-active-count
-    :type (integer 0)
+    :initform      0
+    :accessor      test-http-exchange-scope-maximum-active-count
+    :type          (integer 0)
     :documentation "The greatest number of simultaneously active scopes."))
   (:documentation "Thread-safe counters for an HTTP exchange scope test."))
 
@@ -448,49 +448,49 @@ so it starts without crawling every system the host happens to have."
 
 (defclass test-http-server ()
   ((socket
-    :initarg :socket
-    :reader test-http-server-socket
-    :type t
+    :initarg       :socket
+    :reader        test-http-server-socket
+    :type          t
     :documentation "The listening socket.")
    (port
-    :initarg :port
-    :reader test-http-server-port
-    :type integer
+    :initarg       :port
+    :reader        test-http-server-port
+    :type          integer
     :documentation "The bound loopback port.")
    (handler
-    :initarg :handler
-    :reader test-http-server-handler
-    :type function
+    :initarg       :handler
+    :reader        test-http-server-handler
+    :type          function
     :documentation "The function producing HTTP responses.")
    (thread
-    :initform nil
-    :accessor test-http-server-thread
-    :type t
+    :initform      nil
+    :accessor      test-http-server-thread
+    :type          t
     :documentation "The accept-loop thread.")
    (worker-threads
-    :initform nil
-    :accessor test-http-server-worker-threads
-    :type list
+    :initform      nil
+    :accessor      test-http-server-worker-threads
+    :type          list
     :documentation "The connection workers started by the accept loop.")
    (requests
-    :initform nil
-    :accessor test-http-server-requests
-    :type list
+    :initform      nil
+    :accessor      test-http-server-requests
+    :type          list
     :documentation "The requests observed in chronological order.")
    (lock
-    :initform (make-lock "mcparen HTTP fixture")
-    :reader test-http-server-lock
-    :type t
+    :initform      (make-lock "mcparen HTTP fixture")
+    :reader        test-http-server-lock
+    :type          t
     :documentation "The lock protecting requests and stop state.")
    (stopping-p
-    :initform nil
-    :accessor test-http-server-stopping-p
-    :type boolean
+    :initform      nil
+    :accessor      test-http-server-stopping-p
+    :type          boolean
     :documentation "True while the fixture is stopping.")
    (failure
-    :initform nil
-    :accessor test-http-server-failure
-    :type t
+    :initform      nil
+    :accessor      test-http-server-failure
+    :type          t
     :documentation "The first unexpected accept-loop failure."))
   (:documentation "A bounded raw-socket HTTP server for transport tests."))
 
@@ -544,23 +544,31 @@ so it starts without crawling every system the host happens to have."
                      count content-length))))
         (make-instance
          'test-http-request
-         :method (first parts)
-         :target (second parts)
+         :method  (first parts)
+         :target  (second parts)
          :headers (nreverse headers)
-         :body body)))))
+         :body    body)))))
 
 (-> test-http--reason (integer) string)
 (defun test-http--reason (status)
   "Return a conventional HTTP reason phrase for STATUS."
   (case status
-    (200 "OK")
-    (202 "Accepted")
-    (204 "No Content")
-    (302 "Found")
-    (404 "Not Found")
-    (405 "Method Not Allowed")
-    (500 "Internal Server Error")
-    (t "Test Response")))
+    (200
+     "OK")
+    (202
+     "Accepted")
+    (204
+     "No Content")
+    (302
+     "Found")
+    (404
+     "Not Found")
+    (405
+     "Method Not Allowed")
+    (500
+     "Internal Server Error")
+    (t
+     "Test Response")))
 
 (-> make-test-http-streaming-body (function) test-http-streaming-body)
 (defun make-test-http-streaming-body (writer)
@@ -600,11 +608,11 @@ so it starts without crawling every system the host happens to have."
   (let ((stream
           (sb-bsd-sockets:socket-make-stream
            socket
-           :input t
-           :output t
-           :element-type 'character
+           :input           t
+           :output          t
+           :element-type    'character
            :external-format :utf-8
-           :buffering :none)))
+           :buffering       :none)))
     (unwind-protect
          (let ((request (test-http--read-request stream)))
            (when request
@@ -673,7 +681,7 @@ so it starts without crawling every system the host happens to have."
   (let ((socket
           (make-instance
            'sb-bsd-sockets:inet-socket
-           :type :stream
+           :type     :stream
            :protocol :tcp)))
     (setf (sb-bsd-sockets:sockopt-reuse-address socket) t)
     (sb-bsd-sockets:socket-bind socket #(127 0 0 1) 0)
@@ -684,8 +692,8 @@ so it starts without crawling every system the host happens to have."
       (let ((server
               (make-instance
                'test-http-server
-               :socket socket
-               :port port
+               :socket  socket
+               :port    port
                :handler handler)))
         (setf
          (test-http-server-thread server)

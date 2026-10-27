@@ -14,11 +14,11 @@
 
 (define-test input-schema-preserves-json-values-and-detaches
   (let* ((annotations (json-object "description" "A tool" "default" (json-false)))
-         (properties (json-object "enabled" (json-object "type" "boolean")))
-         (original (json-object "type" (vector "object" "null")
-                                "properties" properties
-                                "required" (vector "enabled")
-                                "x-annotation" annotations)))
+         (properties  (json-object "enabled" (json-object "type" "boolean")))
+         (original    (json-object "type" (vector "object" "null")
+                                   "properties" properties
+                                   "required" (vector "enabled")
+                                   "x-annotation" annotations)))
     (multiple-value-bind (normalized bytes)
         (mcp-validate-input-schema original)
       (test-assert (not (eq original normalized)))
@@ -72,8 +72,8 @@
   (dolist (options '((:maximum-bytes 2) (:maximum-nodes 1) (:maximum-depth 0)))
     (test-signals mcp-input-schema-error
       (apply #'mcp-validate-input-schema (json-object) options)))
-  (let* ((schema (json-object "type" "object" "properties" (json-object)
-                              "description" (make-string 40 :initial-element #\ř)))
+  (let* ((schema     (json-object "type" "object" "properties" (json-object)
+                                  "description" (make-string 40 :initial-element #\ř)))
          (characters (length (argo:json-encode schema))))
     (test-signals mcp-input-schema-error
       (mcp-validate-input-schema schema :maximum-bytes characters)))

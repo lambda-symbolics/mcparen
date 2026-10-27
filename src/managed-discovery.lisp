@@ -18,32 +18,35 @@
 (defun mcp-managed--copy-value (value)
   "Detach protocol metadata so snapshot consumers cannot mutate retained discovery."
   (typecase value
-    (string (copy-seq value))
+    (string
+     (copy-seq value))
     (hash-table
      (let ((copy (make-hash-table :test #'equal)))
        (maphash (lambda (key child)
                   (setf (gethash (mcp-managed--copy-value key) copy)
                         (mcp-managed--copy-value child))) value)
        copy))
-    (vector (map 'vector #'mcp-managed--copy-value value))
-    (cons (cons (mcp-managed--copy-value (first value))
-                (mcp-managed--copy-value (rest value))))
+    (vector
+     (map 'vector #'mcp-managed--copy-value value))
+    (cons
+     (cons (mcp-managed--copy-value (first value))
+           (mcp-managed--copy-value (rest value))))
     (mcp-tool
      (let ((copy
              (make-instance 'mcp-tool
-                            :name (mcp-managed--copy-value (mcp-tool-name value))
-                            :title (mcp-managed--copy-value (mcp-tool-title value))
-                            :description (mcp-managed--copy-value (mcp-tool-description value))
-                            :input-schema (mcp-managed--copy-value (mcp-tool-input-schema value))
+                            :name          (mcp-managed--copy-value (mcp-tool-name value))
+                            :title         (mcp-managed--copy-value (mcp-tool-title value))
+                            :description   (mcp-managed--copy-value (mcp-tool-description value))
+                            :input-schema  (mcp-managed--copy-value (mcp-tool-input-schema value))
                             :output-schema (mcp-managed--copy-value (mcp-tool-output-schema value))
-                            :annotations (mcp-managed--copy-value (mcp-tool-annotations value))
-                            :execution (mcp-managed--copy-value (mcp-tool-execution value))
-                            :task-support (mcp-managed--copy-value (mcp-tool-task-support value)))))
+                            :annotations   (mcp-managed--copy-value (mcp-tool-annotations value))
+                            :execution     (mcp-managed--copy-value (mcp-tool-execution value))
+                            :task-support  (mcp-managed--copy-value (mcp-tool-task-support value)))))
        (when (slot-boundp value 'raw)
          (setf (slot-value copy 'raw) (mcp-managed--copy-value (mcp-tool-raw value))))
        copy))
-    (t value)))
-
+    (t
+     value)))
 
 (defun mcp-server-runtime-snapshot (server)
   "Capture a detached, synchronized discovery observation without network work."
@@ -54,8 +57,8 @@
      (mcp-server-runtime-tools-revision server) :requested-version
      (with-lock-held ((mcp-server-runtime-tools-change-lock server))
        (mcp-server-runtime-tools-change-version server))
-     :discovered-version (mcp-server-runtime-tools-discovered-version server)
-     :capabilities (mcp-managed--copy-value (mcp-server-runtime-capabilities server))
+     :discovered-version                  (mcp-server-runtime-tools-discovered-version server)
+     :capabilities                        (mcp-managed--copy-value (mcp-server-runtime-capabilities server))
      :tools (mcp-managed--copy-value (mcp-server-runtime-tools server)) :schema-bytes
      (mcp-server-runtime-tool-schema-bytes server) :diagnostic
      (mcp-managed--copy-value (mcp-server-runtime-failure server)))))

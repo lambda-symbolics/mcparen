@@ -28,164 +28,164 @@
 
 (defclass mcp-stdio-pending-request ()
   ((condition-variable
-    :initform (make-condition-variable)
-    :reader mcp-stdio-pending-condition-variable
-    :type t
+    :initform      (make-condition-variable)
+    :reader        mcp-stdio-pending-condition-variable
+    :type          t
     :documentation "The condition signaled when this request completes.")
    (response
-    :initform nil
-    :accessor mcp-stdio-pending-response
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-pending-response
+    :type          t
     :documentation "The matching decoded JSON-RPC response."))
   (:documentation "One concurrent stdio request awaiting a response."))
 
 (defclass mcp-stdio-transport (mcp-transport)
   ((command
-    :initarg :command
-    :reader mcp-stdio-transport-command
-    :type string
+    :initarg       :command
+    :reader        mcp-stdio-transport-command
+    :type          string
     :documentation "The executable used to start the MCP server.")
    (arguments
-    :initarg :arguments
-    :initform nil
-    :reader mcp-stdio-transport-arguments
-    :type list
+    :initarg       :arguments
+    :initform      nil
+    :reader        mcp-stdio-transport-arguments
+    :type          list
     :documentation "The exact argv strings following the executable.")
    (directory
-    :initarg :directory
+    :initarg  :directory
     :initform nil
-    :reader mcp-stdio-transport-directory
-    :type t
+    :reader   mcp-stdio-transport-directory
+    :type     t
     :documentation
     "The optional server directory or a function resolving it at launch.")
    (environment-function
-    :initarg :environment-function
+    :initarg  :environment-function
     :initform (constantly nil)
-    :reader mcp-stdio-transport-environment-function
-    :type function
+    :reader   mcp-stdio-transport-environment-function
+    :type     function
     :documentation
     "A function returning a UIOP environment list, or NIL to inherit it.")
    (request-handler
-    :initarg :request-handler
-    :initform nil
-    :reader mcp-stdio-transport-request-handler
-    :type t
+    :initarg       :request-handler
+    :initform      nil
+    :reader        mcp-stdio-transport-request-handler
+    :type          t
     :documentation "An optional function handling JSON-RPC requests from the server.")
    (notification-handler
-    :initarg :notification-handler
-    :initform nil
-    :reader mcp-stdio-transport-notification-handler
-    :type t
+    :initarg       :notification-handler
+    :initform      nil
+    :reader        mcp-stdio-transport-notification-handler
+    :type          t
     :documentation "An optional function receiving server notification method and params.")
    (ingress-projector
-    :initarg :ingress-projector
+    :initarg  :ingress-projector
     :initform (lambda (kind value)
                 (declare (ignore kind))
                 value)
-    :reader mcp-stdio-transport-ingress-projector
-    :type function
+    :reader   mcp-stdio-transport-ingress-projector
+    :type     function
     :documentation
     "A function projecting server data before the transport retains it.")
    (maximum-message-characters
-    :initarg :maximum-message-characters
-    :initform *mcp-maximum-message-characters*
-    :reader mcp-stdio-transport-maximum-message-characters
-    :type integer
+    :initarg       :maximum-message-characters
+    :initform      *mcp-maximum-message-characters*
+    :reader        mcp-stdio-transport-maximum-message-characters
+    :type          integer
     :documentation "The maximum characters accepted in one stdout JSON document.")
    (process
-    :initform nil
-    :accessor mcp-stdio-transport-process
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-transport-process
+    :type          t
     :documentation "The live UIOP process object.")
    (process-group-p
-    :initform nil
-    :accessor mcp-stdio-transport-process-group-p
-    :type boolean
+    :initform      nil
+    :accessor      mcp-stdio-transport-process-group-p
+    :type          boolean
     :documentation "True when the server was launched in a dedicated process group.")
    (process-group-identifier
-    :initform nil
-    :accessor mcp-stdio-transport-process-group-identifier
-    :type (or null integer)
+    :initform      nil
+    :accessor      mcp-stdio-transport-process-group-identifier
+    :type          (or null integer)
     :documentation "The positive process group identifier used for shutdown.")
    (input
-    :initform nil
-    :accessor mcp-stdio-transport-input
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-transport-input
+    :type          t
     :documentation "The stream writing to server stdin.")
    (output
-    :initform nil
-    :accessor mcp-stdio-transport-output
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-transport-output
+    :type          t
     :documentation "The stream reading server stdout.")
    (error-output
-    :initform nil
-    :accessor mcp-stdio-transport-error-output
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-transport-error-output
+    :type          t
     :documentation "The stream draining server stderr.")
    (reader-thread
-    :initform nil
-    :accessor mcp-stdio-transport-reader-thread
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-transport-reader-thread
+    :type          t
     :documentation "The thread decoding server stdout.")
    (error-thread
-    :initform nil
-    :accessor mcp-stdio-transport-error-thread
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-transport-error-thread
+    :type          t
     :documentation "The thread draining bounded server stderr.")
    (callback-thread
-    :initform nil
-    :accessor mcp-stdio-transport-callback-thread
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-transport-callback-thread
+    :type          t
     :documentation "The sole ordered server callback worker thread.")
    (callback-condition-variable
-    :initform (make-condition-variable)
-    :reader mcp-stdio-transport-callback-condition-variable
-    :type t
+    :initform      (make-condition-variable)
+    :reader        mcp-stdio-transport-callback-condition-variable
+    :type          t
     :documentation "The condition signaled when callback work becomes available.")
    (callback-queue
-    :initform nil
-    :accessor mcp-stdio-transport-callback-queue
-    :type list
+    :initform      nil
+    :accessor      mcp-stdio-transport-callback-queue
+    :type          list
     :documentation "Ordered callback functions waiting for the worker.")
    (callback-stopping-p
-    :initform t
-    :accessor mcp-stdio-transport-callback-stopping-p
-    :type boolean
+    :initform      t
+    :accessor      mcp-stdio-transport-callback-stopping-p
+    :type          boolean
     :documentation "True when callback work must no longer begin.")
    (write-lock
-    :initform (make-lock "mcparen stdio write")
-    :reader mcp-stdio-transport-write-lock
-    :type t
+    :initform      (make-lock "mcparen stdio write")
+    :reader        mcp-stdio-transport-write-lock
+    :type          t
     :documentation "The lock preserving one-JSON-document-per-line writes.")
    (state-lock
-    :initform (make-lock "mcparen stdio state")
-    :reader mcp-stdio-transport-state-lock
-    :type t
+    :initform      (make-lock "mcparen stdio state")
+    :reader        mcp-stdio-transport-state-lock
+    :type          t
     :documentation "The lock protecting response and failure state.")
    (pending-requests
-    :initform (make-hash-table :test #'equal)
-    :reader mcp-stdio-transport-pending-requests
-    :type hash-table
+    :initform      (make-hash-table :test #'equal)
+    :reader        mcp-stdio-transport-pending-requests
+    :type          hash-table
     :documentation "Request identifiers mapped to their private wait state.")
    (reader-failure
-    :initform nil
-    :accessor mcp-stdio-transport-reader-failure
-    :type t
+    :initform      nil
+    :accessor      mcp-stdio-transport-reader-failure
+    :type          t
     :documentation "The terminal stdout reader failure, when any.")
    (stderr-text
-    :initform ""
-    :accessor mcp-stdio-transport-stderr-text
-    :type string
+    :initform      ""
+    :accessor      mcp-stdio-transport-stderr-text
+    :type          string
     :documentation "The bounded tail of server stderr.")
    (closing-p
-    :initform nil
-    :accessor mcp-stdio-transport-closing-p
-    :type boolean
+    :initform      nil
+    :accessor      mcp-stdio-transport-closing-p
+    :type          boolean
     :documentation "True while deliberate shutdown is in progress.")
    (open-p
-    :initform nil
-    :accessor mcp-stdio-transport-open-p
-    :type boolean
+    :initform      nil
+    :accessor      mcp-stdio-transport-open-p
+    :type          boolean
     :documentation "True while the process and streams are usable."))
   (:documentation "A newline-delimited JSON-RPC MCP stdio transport."))
 
@@ -222,33 +222,33 @@ reader failures with a fixed diagnostic, and rejects requests with a JSON-RPC
 method-not-found response. The function must be bounded and thread-safe."
   (unless (and (stringp command) (plusp (length command)))
     (error 'mcp-transport-error
-           :message "An MCP stdio command must be a non-empty string."
+           :message   "An MCP stdio command must be a non-empty string."
            :transport nil
-           :cause nil))
+           :cause     nil))
   (unless (every #'stringp arguments)
     (error 'mcp-transport-error
-           :message "Every MCP stdio argument must be a string."
+           :message   "Every MCP stdio argument must be a string."
            :transport nil
-           :cause nil))
+           :cause     nil))
   (unless (and (integerp maximum-message-characters)
                (plusp maximum-message-characters))
     (error 'mcp-transport-error
-           :message "The MCP stdio message limit must be a positive integer."
+           :message   "The MCP stdio message limit must be a positive integer."
            :transport nil
-           :cause nil))
+           :cause     nil))
   (unless (functionp ingress-projector)
     (error 'mcp-transport-error
-           :message "An MCP stdio ingress projector must be a function."
+           :message   "An MCP stdio ingress projector must be a function."
            :transport nil
-           :cause nil))
+           :cause     nil))
   (make-instance 'mcp-stdio-transport
-                 :command command
-                 :arguments (copy-list arguments)
-                 :directory directory
-                 :environment-function environment-function
-                 :request-handler request-handler
-                 :notification-handler notification-handler
-                 :ingress-projector ingress-projector
+                 :command                    command
+                 :arguments                  (copy-list arguments)
+                 :directory                  directory
+                 :environment-function       environment-function
+                 :request-handler            request-handler
+                 :notification-handler       notification-handler
+                 :ingress-projector          ingress-projector
                  :maximum-message-characters maximum-message-characters))
 
 (defmethod mcp-transport-open-p ((transport mcp-stdio-transport))
@@ -266,7 +266,7 @@ method-not-found response. The function must be bounded and thread-safe."
    :message
    (format nil "The MCP stdio ingress projector failed for ~S." kind)
    :transport transport
-   :cause nil))
+   :cause     nil))
 
 (-> mcp-stdio--project-ingress
     (mcp-stdio-transport keyword t)
@@ -374,17 +374,17 @@ method-not-found response. The function must be bounded and thread-safe."
              :message
              (format nil "~A timed out after ~,2F seconds." operation timeout)
              :transport transport
-             :cause (mcp-stdio--close-after-write-timeout transport)
+             :cause     (mcp-stdio--close-after-write-timeout transport)
              :operation operation
-             :seconds timeout))
+             :seconds   timeout))
     (handler-case
         (with-lock-held ((mcp-stdio-transport-write-lock transport))
           (let ((stream (mcp-stdio-transport-input transport)))
             (unless (and stream (open-stream-p stream))
               (error 'mcp-transport-error
-                     :message "The MCP stdio input stream is closed."
+                     :message   "The MCP stdio input stream is closed."
                      :transport transport
-                     :cause nil))
+                     :cause     nil))
             (ls-compat:with-timeout remaining
               (write-line
                (json-encode
@@ -400,16 +400,16 @@ method-not-found response. The function must be bounded and thread-safe."
                (format nil "~A timed out after ~,2F seconds."
                        operation timeout)
                :transport transport
-               :cause (mcp-stdio--close-after-write-timeout transport)
+               :cause     (mcp-stdio--close-after-write-timeout transport)
                :operation operation
-               :seconds timeout))
+               :seconds   timeout))
       (mcp-error (condition)
         (error condition))
       (error (cause)
         (error 'mcp-transport-error
-               :message "Could not write to the MCP stdio server."
+               :message   "Could not write to the MCP stdio server."
                :transport transport
-               :cause cause))))
+               :cause     cause))))
   nil)
 
 (-> mcp-stdio--server-error-response (t integer string &optional t) hash-table)
@@ -433,9 +433,9 @@ method-not-found response. The function must be bounded and thread-safe."
   (with-lock-held ((mcp-stdio-transport-state-lock transport))
     (when (mcp-stdio-transport-callback-stopping-p transport)
       (error 'mcp-transport-error
-             :message "The MCP stdio callback worker is stopped."
+             :message   "The MCP stdio callback worker is stopped."
              :transport transport
-             :cause nil))
+             :cause     nil))
     (when (>= (length (mcp-stdio-transport-callback-queue transport))
               *mcp-stdio-callback-queue-limit*)
       (error 'mcp-transport-error
@@ -444,7 +444,7 @@ method-not-found response. The function must be bounded and thread-safe."
                      "The MCP stdio callback queue exceeded its ~D-job limit."
                      *mcp-stdio-callback-queue-limit*)
              :transport transport
-             :cause nil))
+             :cause     nil))
     (setf (mcp-stdio-transport-callback-queue transport)
           (nconc (mcp-stdio-transport-callback-queue transport)
                  (list function)))
@@ -470,10 +470,10 @@ method-not-found response. The function must be bounded and thread-safe."
           (return-from mcp-stdio--callback-loop nil))
         (pop (mcp-stdio-transport-callback-queue transport)))
     do
-       (handler-case
-           (funcall callback)
-         (error (cause)
-           (mcp-stdio--record-reader-failure transport cause))))
+      (handler-case
+          (funcall callback)
+        (error (cause)
+          (mcp-stdio--record-reader-failure transport cause))))
   nil)
 
 (-> mcp-stdio--handle-server-request
@@ -482,9 +482,9 @@ method-not-found response. The function must be bounded and thread-safe."
 (defun mcp-stdio--handle-server-request (transport message)
   "Handle one server-originated JSON-RPC request without blocking the reader."
   (let ((identifier (json-get message "id"))
-        (method (json-get message "method"))
-        (params (json-get message "params"))
-        (handler (mcp-stdio-transport-request-handler transport)))
+        (method     (json-get message "method"))
+        (params     (json-get message "params"))
+        (handler    (mcp-stdio-transport-request-handler transport)))
     (mcp-stdio--enqueue-callback
      transport
      (lambda ()
@@ -505,10 +505,10 @@ method-not-found response. The function must be bounded and thread-safe."
                               (format nil
                                       "Client method ~S is not supported."
                                       method)
-                              :method method
+                              :method  method
                               :payload nil
-                              :code -32601
-                              :data nil))))
+                              :code    -32601
+                              :data    nil))))
                  (mcp-rpc-error (cause)
                    (mcp-stdio--server-error-response
                     identifier
@@ -529,7 +529,7 @@ method-not-found response. The function must be bounded and thread-safe."
            (error (response-cause)
              (mcp-stdio--record-reader-failure
               transport response-cause))))))
-  nil))
+   nil))
 
 (-> mcp-stdio--project-message
     (mcp-stdio-transport keyword hash-table)
@@ -637,9 +637,9 @@ method-not-found response. The function must be bounded and thread-safe."
            transport
            (make-condition
             'mcp-transport-error
-            :message "The MCP stdio server closed its output."
+            :message   "The MCP stdio server closed its output."
             :transport transport
-            :cause nil))))
+            :cause     nil))))
     (error (cause)
       (mcp-stdio--record-reader-failure transport cause)))
   nil)
@@ -665,13 +665,13 @@ method-not-found response. The function must be bounded and thread-safe."
                    nil nil)
                 while character
                 do
-                   (vector-push character buffer)
-                   (when (or (char= character #\Newline)
-                             (= (length buffer)
-                                (array-total-size buffer)))
-                     (flush-buffer))
+                  (vector-push character buffer)
+                  (when (or (char= character #\Newline)
+                            (= (length buffer)
+                               (array-total-size buffer)))
+                    (flush-buffer))
                 finally
-                   (flush-buffer))))
+                  (flush-buffer))))
     (error (cause)
       (unless (mcp-stdio-transport-closing-p transport)
         (mcp-stdio--append-stderr
@@ -694,21 +694,21 @@ method-not-found response. The function must be bounded and thread-safe."
                      :message
                      "Could not resolve the MCP stdio working directory."
                      :transport transport
-                     :cause cause))))
+                     :cause     cause))))
         (environment
           (handler-case
               (funcall
                (mcp-stdio-transport-environment-function transport))
             (error (cause)
               (error 'mcp-transport-error
-                     :message "Could not resolve the MCP stdio environment."
+                     :message   "Could not resolve the MCP stdio environment."
                      :transport transport
-                     :cause cause)))))
+                     :cause     cause)))))
     (append
-     (list :input :stream
-           :output :stream
-           :error-output :stream
-           :external-format :utf-8
+     (list :input               :stream
+           :output              :stream
+           :error-output        :stream
+           :external-format     :utf-8
            :ignore-error-status t)
      (when directory
        (list :directory directory))
@@ -742,13 +742,13 @@ method-not-found response. The function must be bounded and thread-safe."
                   :message
                   "The MCP stdio server exited before entering its process group."
                   :transport transport
-                  :cause nil)
+                  :cause     nil)
       unless (plusp (mcp-stdio--remaining-seconds deadline))
         do (error 'mcp-transport-error
                   :message
                   "Timed out waiting for the MCP stdio server process group."
                   :transport transport
-                  :cause nil)
+                  :cause     nil)
       do (sleep 0.01))))
 
 (defmethod mcp-transport-open ((transport mcp-stdio-transport))
@@ -763,7 +763,7 @@ method-not-found response. The function must be bounded and thread-safe."
             (mcp-stdio-transport-error-thread transport)
             (mcp-stdio-transport-callback-thread transport))
     (mcp-transport-close transport))
-  (let ((process nil)
+  (let ((process  nil)
         (opened-p nil))
     (unwind-protect
          (handler-case
@@ -822,7 +822,7 @@ method-not-found response. The function must be bounded and thread-safe."
                     (format nil "Could not start MCP stdio command ~S."
                             (mcp-stdio-transport-command transport))
                     :transport transport
-                    :cause cause)))
+                    :cause     cause)))
       (unless opened-p
         (handler-case
             (mcp-transport-close transport)
@@ -842,7 +842,7 @@ method-not-found response. The function must be bounded and thread-safe."
           (return response)))
       (when (mcp-stdio-transport-reader-failure transport)
         (let ((failure (mcp-stdio-transport-reader-failure transport))
-              (stderr (mcp-stdio-transport-stderr-text transport)))
+              (stderr  (mcp-stdio-transport-stderr-text transport)))
           (if (or (typep failure 'mcp-protocol-error)
                   (typep failure 'mcp-timeout))
               (error failure)
@@ -852,7 +852,7 @@ method-not-found response. The function must be bounded and thread-safe."
                              failure
                              (and (plusp (length stderr)) stderr))
                      :transport transport
-                     :cause failure))))
+                     :cause     failure))))
       (let ((remaining (mcp-stdio--remaining-seconds deadline)))
         (unless (plusp remaining)
           (error 'mcp-timeout
@@ -860,9 +860,9 @@ method-not-found response. The function must be bounded and thread-safe."
                  (format nil "MCP stdio request ~S timed out after ~,2F seconds."
                          identifier timeout)
                  :transport transport
-                 :cause nil
+                 :cause     nil
                  :operation "JSON-RPC request"
-                 :seconds timeout))
+                 :seconds   timeout))
         (condition-wait
          (mcp-stdio-pending-condition-variable pending)
          (mcp-stdio-transport-state-lock transport)
@@ -873,14 +873,14 @@ method-not-found response. The function must be bounded and thread-safe."
   "Serialize REQUEST and wait for its matching JSON-RPC response."
   (unless (mcp-transport-open-p transport)
     (error 'mcp-transport-error
-           :message "The MCP stdio transport is closed."
+           :message   "The MCP stdio transport is closed."
            :transport transport
-           :cause nil))
+           :cause     nil))
   (let ((identifier (json-get request "id" :absent)))
     (when (eq identifier :absent)
       (error 'mcp-protocol-error
              :message "An MCP request requires a JSON-RPC identifier."
-             :method (json-get request "method")
+             :method  (json-get request "method")
              :payload request))
     (let ((pending (make-instance 'mcp-stdio-pending-request)))
       (with-lock-held ((mcp-stdio-transport-state-lock transport))
@@ -891,7 +891,7 @@ method-not-found response. The function must be bounded and thread-safe."
                  :message
                  (format nil "Duplicate in-flight MCP request identifier ~S."
                          identifier)
-                 :method (json-get request "method")
+                 :method  (json-get request "method")
                  :payload nil))
         (setf (gethash
                identifier
@@ -914,9 +914,9 @@ method-not-found response. The function must be bounded and thread-safe."
   "Write one stdio NOTIFICATION before its deadline."
   (unless (mcp-transport-open-p transport)
     (error 'mcp-transport-error
-           :message "The MCP stdio transport is closed."
+           :message   "The MCP stdio transport is closed."
            :transport transport
-           :cause nil))
+           :cause     nil))
   (mcp-stdio--write-message
    transport notification
    (mcp-stdio--deadline timeout)
@@ -1030,10 +1030,10 @@ method-not-found response. The function must be bounded and thread-safe."
     (condition-notify
      (mcp-stdio-transport-callback-condition-variable transport)))
   (let ((cleanup-failure nil))
-    (let ((process (mcp-stdio-transport-process transport))
-          (reader-thread (mcp-stdio-transport-reader-thread transport))
-          (error-thread (mcp-stdio-transport-error-thread transport))
-          (callback-thread (mcp-stdio-transport-callback-thread transport))
+    (let ((process           (mcp-stdio-transport-process transport))
+          (reader-thread     (mcp-stdio-transport-reader-thread transport))
+          (error-thread      (mcp-stdio-transport-error-thread transport))
+          (callback-thread   (mcp-stdio-transport-callback-thread transport))
           (process-stopped-p t))
       (mcp-stdio--close-stream (mcp-stdio-transport-input transport))
       (when process
@@ -1061,17 +1061,17 @@ method-not-found response. The function must be bounded and thread-safe."
         (setf cleanup-failure
               (make-condition
                'mcp-transport-error
-               :message "The MCP stdio process group survived SIGKILL."
+               :message   "The MCP stdio process group survived SIGKILL."
                :transport transport
-               :cause nil))))
+               :cause     nil))))
     (with-lock-held ((mcp-stdio-transport-state-lock transport))
       (let ((closure
               (or cleanup-failure
                   (make-condition
                    'mcp-transport-error
-                   :message "The MCP stdio transport closed."
+                   :message   "The MCP stdio transport closed."
                    :transport transport
-                   :cause nil))))
+                   :cause     nil))))
         (setf (mcp-stdio-transport-process transport) nil
               (mcp-stdio-transport-process-group-p transport) nil
               (mcp-stdio-transport-process-group-identifier transport) nil
@@ -1134,9 +1134,9 @@ method-not-found response. The function must be bounded and thread-safe."
           (mcp-stdio-transport-reader-failure transport)
           (make-condition
            'mcp-transport-error
-           :message "The inherited MCP stdio transport detached."
+           :message   "The inherited MCP stdio transport detached."
            :transport transport
-           :cause nil)
+           :cause     nil)
           (mcp-stdio-transport-stderr-text transport) ""
           (mcp-stdio-transport-open-p transport) nil
           (mcp-stdio-transport-closing-p transport) nil)

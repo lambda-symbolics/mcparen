@@ -28,8 +28,10 @@
                                (map 'vector #'mcp-tool-raw
                                     (if tools-function (funcall tools-function)
                                         (list (test-tool name)))))))
-                ((string= method "ping") (test-rpc-result request (json-object)))
-                (t (error "Unexpected managed fixture method ~S." method))))))))
+                ((string= method "ping")
+                 (test-rpc-result request (json-object)))
+                (t
+                 (error "Unexpected managed fixture method ~S." method))))))))
       initargs)
      counts)))
 
@@ -62,11 +64,16 @@
   "Model credential scope errors and nonlocal exits before local cleanup."
   (block nil
     (case (test-managed-scope-failure server)
-      (:throw (throw 'test-managed-cleanup :aborted))
-      (:serious (error 'test-managed-cleanup-abort))
-      (:skip (return nil))
-      ((nil) nil)
-      (otherwise (error "Credential resolver unavailable.")))
+      (:throw
+       (throw 'test-managed-cleanup :aborted))
+      (:serious
+       (error 'test-managed-cleanup-abort))
+      (:skip
+       (return nil))
+      ((nil)
+       nil)
+      (otherwise
+       (error "Credential resolver unavailable.")))
     (funcall function)))
 
 (defmethod mcp-managed-call-with-local-cleanup
@@ -87,13 +94,14 @@
   (declare (ignore function))
   (funcall (test-managed-cleanup-observer server) server))
 
+
 ;;;; -- Migrated Lifecycle and Discovery Cases --
 
 (define-test managed-stable-generation-and-bounded-churn
   (dolist (changes '(1 8))
     (multiple-value-bind (server counts)
         (test-managed-server "generation" :server-class 'test-changing-managed-server
-                                           :initargs (list :changes changes))
+                                           :initargs    (list :changes changes))
       (unwind-protect
            (let ((*mcp-tool-discovery-restart-limit* 3))
              (if (= changes 1)
@@ -137,8 +145,8 @@
     (unwind-protect
          (progn
            (mcp-server-runtime-connect server)
-           (let* ((snapshot (mcp-server-runtime-snapshot server))
-                  (schema (mcp-tool-input-schema (first (mcp-discovery-snapshot-tools snapshot))))
+           (let* ((snapshot   (mcp-server-runtime-snapshot server))
+                  (schema     (mcp-tool-input-schema (first (mcp-discovery-snapshot-tools snapshot))))
                   (generation (mcp-discovery-snapshot-generation snapshot)))
              (setf (gethash "type" schema) "mutated")
              (test-equal "object"
@@ -154,13 +162,13 @@
       (mcp-server-runtime-close server))))
 
 (define-test managed-required-failure-isolation-and-retry
-  (let* ((fail-p nil)
+  (let* ((fail-p   nil)
          (required (test-managed-server "required" :required-p t
-                      :tools-function (lambda ()
-                                        (when fail-p (error "Injected discovery failure."))
-                                        (list (test-tool "required")))))
-         (healthy (test-managed-server "healthy"))
-         (manager (make-instance 'mcp-connection-manager :runtimes (list required healthy))))
+                      :tools-function                          (lambda ()
+                                                                 (when fail-p (error "Injected discovery failure."))
+                                                                 (list (test-tool "required")))))
+         (healthy  (test-managed-server "healthy"))
+         (manager  (make-instance 'mcp-connection-manager :runtimes (list required healthy))))
     (unwind-protect
          (progn
            (mcp-manager-start manager)
@@ -181,10 +189,10 @@
 (define-test managed-required-first-schema-budget
   (let* ((optional (test-managed-server "optional"))
          (required (test-managed-server "required" :required-p t))
-         (bytes (length (babel:string-to-octets (json-encode (mcp-tool-input-schema (test-tool "x")))
-                                               :encoding :utf-8)))
-         (manager (make-instance 'mcp-connection-manager :runtimes (list optional required)
-                                                        :maximum-schema-bytes bytes)))
+         (bytes    (length (babel:string-to-octets (json-encode (mcp-tool-input-schema (test-tool "x")))
+                                                  :encoding :utf-8)))
+         (manager  (make-instance 'mcp-connection-manager :runtimes            (list optional required)
+                                                         :maximum-schema-bytes bytes)))
     (unwind-protect
          (progn
            (mcp-manager-start manager)
@@ -196,15 +204,15 @@
       (mcp-manager-close manager))))
 
 (define-test managed-budget-growth-preempts-cached-optional-server
-  (let* ((grow-p nil)
+  (let* ((grow-p   nil)
          (required (test-managed-server "required" :required-p t
-                      :tools-function (lambda () (if grow-p (list (test-tool "one") (test-tool "two"))
-                                                    (list (test-tool "one"))))))
+                      :tools-function                          (lambda () (if grow-p (list (test-tool "one") (test-tool "two"))
+                                                                             (list (test-tool "one"))))))
          (optional (test-managed-server "optional"))
-         (bytes (length (babel:string-to-octets (json-encode (mcp-tool-input-schema (test-tool "x")))
-                                               :encoding :utf-8)))
-         (manager (make-instance 'mcp-connection-manager :runtimes (list optional required)
-                                                        :maximum-schema-bytes (* 2 bytes))))
+         (bytes    (length (babel:string-to-octets (json-encode (mcp-tool-input-schema (test-tool "x")))
+                                                  :encoding :utf-8)))
+         (manager  (make-instance 'mcp-connection-manager :runtimes            (list optional required)
+                                                         :maximum-schema-bytes (* 2 bytes))))
     (unwind-protect
          (progn
            (mcp-manager-start manager)
@@ -219,9 +227,9 @@
 (define-test managed-duplicate-tools-and-qualified-aggregation
   (let* ((duplicate (test-managed-server "duplicate"
                        :tools-function (lambda () (list (test-tool "same") (test-tool "same")))))
-         (first (test-managed-server "first"))
-         (second (test-managed-server "second"))
-         (manager (make-instance 'mcp-connection-manager :runtimes (list duplicate first second))))
+         (first     (test-managed-server "first"))
+         (second    (test-managed-server "second"))
+         (manager   (make-instance 'mcp-connection-manager :runtimes (list duplicate first second))))
     (unwind-protect
          (progn
            (mcp-manager-start manager)
@@ -230,20 +238,20 @@
                (mcp-manager-collect manager
                                     :list-function (lambda (client) (declare (ignore client))
                                                      (list (json-object "name" "shared")))
-                                    :item-key (lambda (item) (gethash "name" item)))
+                                    :item-key      (lambda (item) (gethash "name" item)))
              (test-equal (list first second) (mapcar #'first results))
              (test-equal (list duplicate) (mapcar #'first failures)))
            (multiple-value-bind (results failures)
                (mcp-manager-collect manager :server-name "first"
-                                    :list-function (lambda (client) (declare (ignore client))
-                                                     '("duplicate" "duplicate"))
-                                    :item-key #'identity)
+                                    :list-function       (lambda (client) (declare (ignore client))
+                                                           '("duplicate" "duplicate"))
+                                    :item-key            #'identity)
              (test-assert (null results))
              (test-equal (list first) (mapcar #'first failures))))
       (mcp-manager-close manager))))
 
 (define-test managed-single-owner-and-atomic-identity-validation
-  (let* ((first (test-managed-server "same"))
+  (let* ((first  (test-managed-server "same"))
          (second (test-managed-server "same")))
     (test-signals mcp-managed-server-error
       (make-instance 'mcp-connection-manager :runtimes (list first second)))
@@ -266,13 +274,13 @@
                (lambda ()
                  (if (eq failure-kind :factory) (error "Factory failed.")
                      (test-managed-server "failed" :required-p t
-                       :tools-function (lambda () (error "Startup failed."))))))))
+                       :tools-function                         (lambda () (error "Startup failed."))))))))
       (test-assert (not (mcp-client-connected-p (mcp-server-runtime-client ready))))
       (test-equal :disconnected (mcp-server-runtime-state ready)))))
 
 (define-test managed-cleanup-with-unavailable-credentials
   (dolist (operation (list #'mcp-server-runtime-close #'mcp-server-runtime-detach))
-    (let* ((server (test-managed-server "cleanup" :server-class 'test-cleanup-managed-server))
+    (let* ((server    (test-managed-server "cleanup" :server-class 'test-cleanup-managed-server))
            (transport (mcp-client-transport (mcp-server-runtime-client server))))
       (mcp-server-runtime-connect server)
       (setf (test-managed-scope-failure server) t)
@@ -287,9 +295,9 @@
 
 (define-test managed-cancellation-and-reconnect
   (let* ((transport (make-test-stdio-transport))
-         (server (make-instance 'mcp-managed-server :name "cancel"
-                                :client (make-mcp-client transport :startup-timeout 3)))
-         (request nil))
+         (server    (make-instance 'mcp-managed-server :name "cancel"
+                                   :client                   (make-mcp-client transport :startup-timeout 3)))
+         (request   nil))
     (unwind-protect
          (progn
            (mcp-server-runtime-connect server)
@@ -315,11 +323,10 @@
            (test-equal :ready (mcp-server-runtime-state server)))
       (mcp-server-runtime-close server))))
 
-
 (define-test managed-concurrent-close
  "Test parallel MCP shutdown and deterministic close-order failure reporting."
- (let ((lock (make-lock "MCP close test"))
-       (entered 0)
+ (let ((lock     (make-lock "MCP close test"))
+       (entered  0)
        (observed (make-hash-table :test #'eq)))
    (mcp-manager--close-runtimes '(:first :second)
     (lambda (runtime)
@@ -348,13 +355,13 @@
 (define-test managed-close-owns-workers-during-fallback-exit
   (dolist (later-exit-p '(nil t))
     (let* ((original-make-thread (symbol-function 'make-thread))
-           (release (sb-thread:make-semaphore))
-           (lock (make-lock "Managed close observations"))
-           (counts (make-hash-table :test #'equal))
-           (ownership-observed nil)
-           (workers nil)
-           (launches 0)
-           (manager nil)
+           (release              (sb-thread:make-semaphore))
+           (lock                 (make-lock "Managed close observations"))
+           (counts               (make-hash-table :test #'equal))
+           (ownership-observed   nil)
+           (workers              nil)
+           (launches             0)
+           (manager              nil)
            (servers
              (loop for name in '("worker-one" "worker-two" "abort" "remaining")
                    collect
@@ -405,8 +412,8 @@
 
 (define-test managed-close-joins-workers-after-join-failure
   (let ((original-join-thread (symbol-function 'join-thread))
-        (failure (make-condition 'simple-error :format-control "Injected join failure."))
-        (joined 0))
+        (failure              (make-condition 'simple-error :format-control "Injected join failure."))
+        (joined               0))
     (unwind-protect
          (progn
            (setf (symbol-function 'join-thread)
@@ -422,7 +429,6 @@
                   (error (condition) condition))))
            (test-equal 3 joined))
       (setf (symbol-function 'join-thread) original-join-thread))))
-
 
 (defclass test-rotating-managed-server (mcp-managed-server)
   ((identity :initform "first" :accessor test-managed-identity
@@ -474,10 +480,10 @@
                   (unless (test-wait-until (lambda () (with-lock-held (lock) release-p)) 3)
                     (error "Discovery barrier timed out."))
                   (list (test-tool "closing")))))
-             (manager (make-instance 'mcp-connection-manager :runtimes (list server)))
+             (manager   (make-instance 'mcp-connection-manager :runtimes (list server)))
              (discovery (test-start-thread (lambda () (mcp-manager-start manager))
                                            "managed discovery"))
-             (closing nil))
+             (closing   nil))
         (unwind-protect
              (progn
                (test-assert (test-wait-until (lambda () (with-lock-held (lock) entered-p)) 2))
@@ -492,12 +498,11 @@
           (with-lock-held (lock) (setf release-p t))
           (mcp-manager-close manager))))))
 
-
 (define-test managed-cleanup-exactly-once-on-scope-exits
   (dolist (failure '(nil :error :serious :throw))
     (let ((server (test-managed-server "scope-exit"
                                       :server-class 'test-cleanup-managed-server))
-          (calls 0))
+          (calls  0))
       (setf (test-managed-scope-failure server) failure)
       (flet ((cleanup () (incf calls)))
         (case failure
@@ -522,7 +527,7 @@
     (dolist (cleanup-failure '(:error :serious :throw))
       (let ((server (test-managed-server "scope-exit"
                                         :server-class 'test-cleanup-managed-server))
-            (calls 0))
+            (calls  0))
         (setf (test-managed-scope-failure server) scope-failure)
         (let ((outcome
                 (handler-case
@@ -532,9 +537,12 @@
                        (lambda ()
                          (incf calls)
                          (ecase cleanup-failure
-                           (:error (error "Local cleanup failed."))
-                           (:serious (error 'serious-condition))
-                           (:throw (throw 'test-managed-cleanup :cleanup-aborted))))))
+                           (:error
+                            (error "Local cleanup failed."))
+                           (:serious
+                            (error 'serious-condition))
+                           (:throw
+                            (throw 'test-managed-cleanup :cleanup-aborted))))))
                   (serious-condition (condition) condition))))
           (if (eq scope-failure :throw)
               (test-equal :aborted outcome)
@@ -543,11 +551,11 @@
 
 (define-test managed-cleanup-local-scope-failure
   (dolist (scope-failure '(:skip t :throw :serious))
-    (let ((server (test-managed-server "local-scope"
-                                      :server-class 'test-cleanup-managed-server))
-          (failure (make-condition 'simple-error :format-control "Local scope failed."))
+    (let ((server   (test-managed-server "local-scope"
+                                        :server-class 'test-cleanup-managed-server))
+          (failure  (make-condition 'simple-error :format-control "Local scope failed."))
           (attempts 0)
-          (calls 0))
+          (calls    0))
       (setf (test-managed-scope-failure server) scope-failure
             (test-managed-local-cleanup-function server)
             (lambda (function cause)
@@ -560,17 +568,20 @@
                     (mcp-managed-call-with-cleanup server (lambda () (incf calls))))
                 (serious-condition (condition) condition))))
         (case scope-failure
-          (:throw (test-equal :aborted outcome))
-          (:serious (test-assert (typep outcome 'test-managed-cleanup-abort)))
-          (otherwise (test-assert (eq failure outcome))))
+          (:throw
+           (test-equal :aborted outcome))
+          (:serious
+           (test-assert (typep outcome 'test-managed-cleanup-abort)))
+          (otherwise
+           (test-assert (eq failure outcome))))
         (test-equal 1 attempts)
         (test-equal 0 calls)))))
 
 (define-test managed-stdio-cleanup-with-unavailable-credentials
   (let* ((transport (make-test-stdio-transport))
-         (server (make-instance 'test-cleanup-managed-server :name "stdio-cleanup"
-                               :client (make-mcp-client transport)))
-         (process nil))
+         (server    (make-instance 'test-cleanup-managed-server :name "stdio-cleanup"
+                                  :client                             (make-mcp-client transport)))
+         (process   nil))
     (unwind-protect
          (progn
            (mcp-server-runtime-connect server)
@@ -587,9 +598,9 @@
   (let* ((transport (make-mcp-streamable-http-transport
                      "http://127.0.0.1:9/mcp"
                      :headers-function (lambda () (error "Credentials unavailable."))))
-         (server (make-instance 'test-cleanup-managed-server :name "http-cleanup"
-                               :client (make-mcp-client transport)))
-         (listener nil))
+         (server    (make-instance 'test-cleanup-managed-server :name "http-cleanup"
+                                  :client                             (make-mcp-client transport)))
+         (listener  nil))
     (unwind-protect
          (progn
            (mcp-transport-open transport)
@@ -606,7 +617,6 @@
            (test-assert (null (mcp-http-transport-listener-thread transport)))
            (test-assert (not (thread-alive-p listener))))
       (mcp-server-runtime-close server))))
-
 
 (define-test managed-nonlocal-startup-cleanup
   (dolist (failure-kind '(:factory :discovery))

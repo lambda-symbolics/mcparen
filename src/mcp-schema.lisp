@@ -41,9 +41,9 @@ as in argo. JSON arrays supplied as proper nonempty lists become vectors."
   (unless (hash-table-p schema)
     (mcp-schema--error ':root-object))
   (let ((limits (make-json-limits
-                 :maximum-characters maximum-bytes
+                 :maximum-characters            maximum-bytes
                  :maximum-depth maximum-depth :maximum-nodes maximum-nodes
-                 :maximum-string-characters maximum-string-characters
+                 :maximum-string-characters     maximum-string-characters
                  :maximum-object-key-characters maximum-key-characters)))
     (handler-case
         (let ((copy (argo:json-decode

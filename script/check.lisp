@@ -12,12 +12,12 @@
       (error "ASDF resolved ~A to ~A instead of local source ~A."
              name source expected-source))))
 
-(let* ((script (truename *load-truename*))
-       (script-directory (uiop:pathname-directory-pathname script))
-       (root (uiop:pathname-parent-directory-pathname script-directory))
+(let* ((script            (truename *load-truename*))
+       (script-directory  (uiop:pathname-directory-pathname script))
+       (root              (uiop:pathname-parent-directory-pathname script-directory))
        (system-definition (merge-pathnames "mcparen.asd" root))
-       (quicklisp (merge-pathnames "quicklisp/setup.lisp"
-                                   (user-homedir-pathname))))
+       (quicklisp         (merge-pathnames "quicklisp/setup.lisp"
+                                           (user-homedir-pathname))))
   (when (uiop:file-exists-p quicklisp)
     (load quicklisp :verbose nil :print nil))
   (asdf:clear-system '#:mcparen/tests)

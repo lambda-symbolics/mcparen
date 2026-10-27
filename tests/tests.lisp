@@ -6,7 +6,7 @@
 (defun run-tests ()
   "Run every registered Mcparen test and signal when any test fails."
   (let ((failures nil)
-        (tests (reverse *test-cases*)))
+        (tests    (reverse *test-cases*)))
     (dolist (test tests)
       (destructuring-bind (name function) test
         (format t "~&~A ... " name)

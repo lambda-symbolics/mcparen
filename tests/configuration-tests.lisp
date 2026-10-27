@@ -3,10 +3,10 @@
 ;;;; -- Declarative Transport Configuration --
 
 (define-test configuration-reads-stdio-and-detaches-values
-  (let* ((form (list :type :stdio
-                     :command (copy-seq "server")
-                     :arguments (list (copy-seq "--mode") (copy-seq "test"))
-                     :environment (list (list "API_KEY" :environment "API_KEY"))))
+  (let* ((form        (list :type        :stdio
+                            :command     (copy-seq "server")
+                            :arguments   (list (copy-seq "--mode") (copy-seq "test"))
+                            :environment (list (list "API_KEY" :environment "API_KEY"))))
          (configuration
            (mcp-read-transport-configuration form
                                               :default-directory "/work/project"))
@@ -40,7 +40,7 @@
            '(:type :http
              :url "https://example.com:443/mcp"
              :headers (("Authorization" :environment "TOKEN")
-                        ("X-Trace" :environment "TRACE"))
+                       ("X-Trace" :environment "TRACE"))
              :connect-timeout-seconds 15))))
     (test-assert (typep configuration 'mcp-http-transport-configuration))
     (test-equal "https://example.com:443/mcp"
@@ -59,8 +59,8 @@
   (let ((stdio (mcp-read-transport-configuration
                 '(:type :stdio :command "server")
                 :default-directory "/tmp/mcp"))
-        (http (mcp-read-transport-configuration
-               '(:type :http :url "http://localhost/mcp"))))
+        (http  (mcp-read-transport-configuration
+                '(:type :http :url "http://localhost/mcp"))))
     (test-equal "/tmp/mcp" (mcp-stdio-configuration-directory stdio)
                 :test #'string=)
     (test-equal 10 (mcp-http-configuration-connect-timeout-seconds http))))
@@ -112,7 +112,6 @@
                            :directory (make-string 4097 :initial-element #\x))))
     (test-signals mcp-configuration-error
       (mcp-read-transport-configuration form))))
-
 
 (define-test configuration-rejects-circular-and-improper-forms
   (let ((circular (list :type :stdio :command "server")))

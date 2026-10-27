@@ -28,26 +28,26 @@ Each call replaces only the character bound, with its own message limit.")
          :message
          (format nil "The ~A exceeded the ~D-character safety limit."
                  source limit)
-         :method nil
+         :method  nil
          :payload nil
-         :source source
-         :limit limit))
+         :source  source
+         :limit   limit))
 
 (-> json--limits (integer) json-limits)
 (defun json--limits (limit)
   "Return *MCP-JSON-LIMITS* with its character bound replaced by LIMIT."
   (let ((limits *mcp-json-limits*))
     (make-json-limits
-     :maximum-characters limit
-     :maximum-depth (json-limits-maximum-depth limits)
-     :maximum-nodes (json-limits-maximum-nodes limits)
+     :maximum-characters        limit
+     :maximum-depth             (json-limits-maximum-depth limits)
+     :maximum-nodes             (json-limits-maximum-nodes limits)
      :maximum-string-characters (json-limits-maximum-string-characters limits)
      :maximum-aggregate-string-characters
      (json-limits-maximum-aggregate-string-characters limits)
      :maximum-object-key-characters
      (json-limits-maximum-object-key-characters limits)
-     :maximum-object-members (json-limits-maximum-object-members limits)
-     :maximum-array-elements (json-limits-maximum-array-elements limits)
+     :maximum-object-members    (json-limits-maximum-object-members limits)
+     :maximum-array-elements    (json-limits-maximum-array-elements limits)
      :maximum-number-characters (json-limits-maximum-number-characters limits))))
 
 (-> json--call-at-boundary (function string integer t) t)
@@ -65,21 +65,21 @@ other JSON failure becomes MCP-PROTOCOL-ERROR carrying PAYLOAD."
                  :message
                  (format nil "The ~A exceeded a JSON safety limit: ~A"
                          source-name (json-error-message condition))
-                 :method nil
+                 :method  nil
                  :payload payload)))
     (json-syntax-error (condition)
       (error 'mcp-protocol-error
              :message
              (format nil "Could not decode MCP JSON: ~A"
                      (json-error-message condition))
-             :method nil
+             :method  nil
              :payload payload))
     (json-error (condition)
       (error 'mcp-protocol-error
              :message
              (format nil "The ~A is not representable as JSON: ~A"
                      source-name (json-error-message condition))
-             :method nil
+             :method  nil
              :payload payload))))
 
 (-> json-encode
@@ -146,12 +146,11 @@ other JSON failure becomes MCP-PROTOCOL-ERROR carrying PAYLOAD."
   "Return a bounded printed representation of VALUE for a diagnostic."
   (let ((text (with-output-to-string (stream)
                 (let ((*print-length* 20)
-                      (*print-level* 8))
+                      (*print-level*  8))
                   (prin1 value stream)))))
     (if (<= (length text) limit)
         text
         (concatenate 'string (subseq text 0 (max 0 (- limit 3))) "..."))))
-
 
 (-> stream-read-bounded-line
     (stream integer string)
@@ -163,7 +162,7 @@ Return the line or NIL, followed by true when end of input was encountered."
   (let ((characters
           (make-array (max 1 (min limit 4096))
                       :element-type 'character
-                      :adjustable t
+                      :adjustable   t
                       :fill-pointer 0)))
     (loop for character = (read-char stream nil nil)
           do
@@ -189,7 +188,7 @@ Return the line or NIL, followed by true when end of input was encountered."
   (let ((characters
           (make-array (max 1 (min limit 4096))
                       :element-type 'character
-                      :adjustable t
+                      :adjustable   t
                       :fill-pointer 0))
         (buffer (make-string 8192)))
     (loop for count = (read-sequence buffer stream)
@@ -217,12 +216,12 @@ Return the line or NIL, followed by true when end of input was encountered."
   (unless (hash-table-p message)
     (error 'mcp-protocol-error
            :message "The MCP peer emitted a non-object JSON-RPC message."
-           :method nil
+           :method  nil
            :payload message))
   (unless (equal (json-get message "jsonrpc") "2.0")
     (error 'mcp-protocol-error
            :message "The MCP peer emitted invalid JSON-RPC version metadata."
-           :method nil
+           :method  nil
            :payload message))
   (multiple-value-bind (method method-present-p)
       (gethash "method" message)
@@ -238,13 +237,13 @@ Return the line or NIL, followed by true when end of input was encountered."
              (unless (stringp method)
                (error 'mcp-protocol-error
                       :message "The MCP JSON-RPC method is not a string."
-                      :method nil
+                      :method  nil
                       :payload message))
              (when (or result-present-p error-present-p)
                (error 'mcp-protocol-error
                       :message
                       "An MCP JSON-RPC request or notification contains response fields."
-                      :method method
+                      :method  method
                       :payload message))
              (multiple-value-bind (params params-present-p)
                  (gethash "params" message)
@@ -252,7 +251,7 @@ Return the line or NIL, followed by true when end of input was encountered."
                           (not (hash-table-p params)))
                  (error 'mcp-protocol-error
                         :message "The MCP JSON-RPC params value is not an object."
-                        :method method
+                        :method  method
                         :payload message)))
              (if identifier-present-p
                  (progn
@@ -260,7 +259,7 @@ Return the line or NIL, followed by true when end of input was encountered."
                      (error 'mcp-protocol-error
                             :message
                             "The MCP JSON-RPC request identifier is invalid."
-                            :method method
+                            :method  method
                             :payload message))
                    ':request)
                  ':notification))
@@ -270,13 +269,13 @@ Return the line or NIL, followed by true when end of input was encountered."
                (error 'mcp-protocol-error
                       :message
                       "The MCP JSON-RPC response identifier is absent or invalid."
-                      :method nil
+                      :method  nil
                       :payload message))
              (when (eq result-present-p error-present-p)
                (error 'mcp-protocol-error
                       :message
                       "An MCP JSON-RPC response must contain exactly one result or error."
-                      :method nil
+                      :method  nil
                       :payload message))
              (when error-present-p
                (unless (and (hash-table-p error-value)
@@ -284,11 +283,11 @@ Return the line or NIL, followed by true when end of input was encountered."
                             (stringp (json-get error-value "message")))
                  (error 'mcp-protocol-error
                         :message "The MCP JSON-RPC error object is malformed."
-                        :method nil
+                        :method  nil
                         :payload message)))
              ':response)
             (t
              (error 'mcp-protocol-error
                     :message "The MCP peer emitted an unclassified JSON-RPC object."
-                    :method nil
+                    :method  nil
                     :payload message))))))))
