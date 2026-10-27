@@ -1,4 +1,28 @@
 #!/bin/sh
+
 set -eu
 
-exec sbcl --noinform --disable-debugger --script "$(dirname "$0")/check.lisp"
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd -- "$root"
+
+if [ ! -r "$root/.qlot/setup.lisp" ]; then
+  printf '%s\n' 'mcparen dependencies are missing; run ./script/bootstrap.' >&2
+  exit 1
+fi
+
+tests=0
+case " $* " in
+  *" --fix "*) ;;
+  *)
+    sbcl --noinform --disable-debugger \
+      --script "$root/script/check.lisp" || tests=$?
+    ;;
+esac
+
+source=0
+sbcl --script "$root/script/check-source.lisp" "$@" || source=$?
+
+if [ "$tests" -ne 0 ]; then
+  exit "$tests"
+fi
+exit "$source"
