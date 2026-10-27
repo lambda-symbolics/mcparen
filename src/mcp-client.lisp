@@ -673,7 +673,7 @@ SOURCE-NAME names it in any encoding failure."
                      (aggregate-items 0)
                      (aggregate-bytes 0)
                      (aggregate-nodes 0))
-                 (loop for page from 1 to *mcp-pagination-maximum-pages*
+                 (loop repeat *mcp-pagination-maximum-pages*
                        for params = (and cursor
                                          (json-object "cursor" cursor))
                        for result = (mcp-client--request client method params)
