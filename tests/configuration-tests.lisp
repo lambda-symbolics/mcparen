@@ -115,7 +115,7 @@
 
 (define-test configuration-rejects-circular-and-improper-forms
   (let ((circular (list :type :stdio :command "server")))
-    (setf (cdr (last circular)) circular)
+    (setf (rest (last circular)) circular)
     (test-signals mcp-configuration-error
       (mcp-read-transport-configuration circular)))
   (dolist (form '((:type :stdio . "bad")

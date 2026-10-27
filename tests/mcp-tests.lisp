@@ -678,7 +678,7 @@
                         (list "oversized numbers"
                               (lambda () (json-encode (ash 1 100000))))
                         (list "unrepresentable values"
-                              (lambda () (json-encode (json-object "f" #'car))))))
+                              (lambda () (json-encode (json-object "f" #'first))))))
       (destructuring-bind (description thunk) case
         (let ((condition (test-signals mcp-protocol-error (funcall thunk))))
           (test-assert (not (typep condition 'mcp-message-too-large))
