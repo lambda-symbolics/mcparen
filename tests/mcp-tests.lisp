@@ -522,7 +522,6 @@
 (define-test client-bounds-pagination-pages
   (labels ((handler (transport request)
              "Return a unique cursor after every empty resource page."
-             (declare (ignore transport))
              (if (string= (json-get request "method") "initialize")
                  (test-rpc-result request (test-initialize-result))
                  (test-rpc-result
@@ -2678,11 +2677,10 @@
           (with-output-to-string (stream)
             (format stream "id: aggregate~C~C"
                     #\Return #\Newline)
-            (dotimes (index 40)
-              (declare (ignore index))
-              (format stream "data: ~A~C~C"
-                      (make-string 20 :initial-element #\x)
-                      #\Return #\Newline))
+            (loop repeat 40
+                  do (format stream "data: ~A~C~C"
+                         (make-string 20 :initial-element #\x)
+                         #\Return #\Newline))
             (format stream "~C~C" #\Return #\Newline))))
     (dolist (body (list large-line large-event))
       (labels ((handler (server request)
@@ -3714,22 +3712,21 @@
                  (make-mcp-streamable-http-transport
                   (test-http-server-url server)))
                (client (make-mcp-client transport)))
-          (dotimes (index 6)
-            (declare (ignore index))
-            (mcp-client-connect client)
-            (test-assert
-             (test-wait-until
-              (lambda ()
-                (mcp-http-transport-listener-body transport))
-              1.0)
-             "The detached session established its idle GET.")
-            (mcp-client-detach client)
-            (test-assert
-             (null
-              (mcp-http-transport-listener-thread transport)))
-            (test-assert
-             (null
-              (mcp-http-transport-listener-body transport))))
+          (loop repeat 6
+                do (mcp-client-connect client)
+                   (test-assert
+                    (test-wait-until
+                     (lambda ()
+                       (mcp-http-transport-listener-body transport))
+                     1.0)
+                    "The detached session established its idle GET.")
+                   (mcp-client-detach client)
+                   (test-assert
+                    (null
+                     (mcp-http-transport-listener-thread transport)))
+                   (test-assert
+                    (null
+                     (mcp-http-transport-listener-body transport))))
           (test-equal 0 delete-count)
           (test-equal 6 initialize-count)
           (test-assert
