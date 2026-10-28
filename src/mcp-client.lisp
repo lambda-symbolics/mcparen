@@ -677,109 +677,110 @@ SOURCE-NAME names it in any encoding failure."
                      (aggregate-bytes 0)
                      (aggregate-nodes 0))
                  (loop repeat *mcp-pagination-maximum-pages*
-                       for params = (and cursor
-                                         (json-object "cursor" cursor))
-                       for result = (mcp-client--request client method :params params)
                        do
-                          (unless (= initial-generation (generation))
-                            (return-from read-session restart-marker))
-                          (unless (hash-table-p result)
-                            (error 'mcp-protocol-error
-                                   :message
-                                   (format nil
-                                           "~A returned a non-object result."
-                                           method)
-                                   :method  method
-                                   :payload result))
-                          (let ((page-items
-                                  (json-get result result-key)))
-                            (unless (and (vectorp page-items)
-                                         (not (stringp page-items)))
+                          (let ((result (mcp-client--request
+                                         client method
+                                         :params (and cursor
+                                                      (json-object "cursor" cursor)))))
+                            (unless (= initial-generation (generation))
+                              (return-from read-session restart-marker))
+                            (unless (hash-table-p result)
                               (error 'mcp-protocol-error
                                      :message
                                      (format nil
-                                             "~A returned non-array ~A data."
-                                             method result-key)
+                                             "~A returned a non-object result."
+                                             method)
                                      :method  method
                                      :payload result))
-                            (let* ((page-item-count
-                                     (length page-items))
-                                   (next-cursor
-                                     (json-get result "nextCursor"))
-                                   (cursor-nodes 0)
-                                   (cursor-bytes 0))
-                              (when next-cursor
-                                (unless (stringp next-cursor)
-                                  (error 'mcp-protocol-error
-                                         :message
-                                         (format nil
-                                                 "~A returned a non-string cursor."
-                                                 method)
-                                         :method  method
-                                         :payload result))
-                                (when (gethash
-                                       next-cursor seen-cursors)
-                                  (error 'mcp-protocol-error
-                                         :message
-                                         (format
-                                          nil
-                                          "~A repeated pagination cursor ~S."
-                                          method next-cursor)
-                                         :method  method
-                                         :payload result))
-                                (multiple-value-setq
-                                    (cursor-nodes cursor-bytes)
-                                  (mcp-client--json-measure
-                                   next-cursor "MCP pagination cursor")))
-                              (multiple-value-bind
-                                    (page-nodes page-bytes)
-                                  (mcp-client--json-measure
-                                   page-items "MCP pagination page")
-                                (let ((prospective-items
-                                        (+ aggregate-items
-                                           page-item-count))
-                                      (prospective-bytes
-                                        (+ aggregate-bytes
-                                           page-bytes
-                                           cursor-bytes))
-                                      (prospective-nodes
-                                        (+ aggregate-nodes
-                                           page-nodes
-                                           cursor-nodes)))
-                                  (when
-                                      (> prospective-items
-                                         *mcp-pagination-maximum-items*)
-                                    (mcp-client--pagination-limit-error
-                                     method
-                                     "aggregate item count"
-                                     *mcp-pagination-maximum-items*))
-                                  (when
-                                      (> prospective-bytes
-                                         *mcp-pagination-maximum-aggregate-bytes*)
-                                    (mcp-client--pagination-limit-error
-                                     method
-                                     "aggregate encoded bytes"
-                                     *mcp-pagination-maximum-aggregate-bytes*))
-                                  (when
-                                      (> prospective-nodes
-                                         *mcp-pagination-maximum-aggregate-nodes*)
-                                    (mcp-client--pagination-limit-error
-                                     method
-                                     "aggregate node count"
-                                     *mcp-pagination-maximum-aggregate-nodes*))
-                                  (setf aggregate-items prospective-items
-                                        aggregate-bytes prospective-bytes
-                                        aggregate-nodes prospective-nodes)
-                                  (push (coerce page-items 'list)
-                                        pages)))
-                              (unless next-cursor
-                                (return-from read-session
-                                  (mapcan
-                                   #'identity
-                                   (nreverse pages))))
-                              (setf (gethash next-cursor seen-cursors)
-                                    t
-                                    cursor next-cursor)))
+                            (let ((page-items
+                                    (json-get result result-key)))
+                              (unless (and (vectorp page-items)
+                                           (not (stringp page-items)))
+                                (error 'mcp-protocol-error
+                                       :message
+                                       (format nil
+                                               "~A returned non-array ~A data."
+                                               method result-key)
+                                       :method  method
+                                       :payload result))
+                              (let* ((page-item-count
+                                       (length page-items))
+                                     (next-cursor
+                                       (json-get result "nextCursor"))
+                                     (cursor-nodes 0)
+                                     (cursor-bytes 0))
+                                (when next-cursor
+                                  (unless (stringp next-cursor)
+                                    (error 'mcp-protocol-error
+                                           :message
+                                           (format nil
+                                                   "~A returned a non-string cursor."
+                                                   method)
+                                           :method  method
+                                           :payload result))
+                                  (when (gethash
+                                         next-cursor seen-cursors)
+                                    (error 'mcp-protocol-error
+                                           :message
+                                           (format
+                                            nil
+                                            "~A repeated pagination cursor ~S."
+                                            method next-cursor)
+                                           :method  method
+                                           :payload result))
+                                  (multiple-value-setq
+                                      (cursor-nodes cursor-bytes)
+                                    (mcp-client--json-measure
+                                     next-cursor "MCP pagination cursor")))
+                                (multiple-value-bind
+                                      (page-nodes page-bytes)
+                                    (mcp-client--json-measure
+                                     page-items "MCP pagination page")
+                                  (let ((prospective-items
+                                          (+ aggregate-items
+                                             page-item-count))
+                                        (prospective-bytes
+                                          (+ aggregate-bytes
+                                             page-bytes
+                                             cursor-bytes))
+                                        (prospective-nodes
+                                          (+ aggregate-nodes
+                                             page-nodes
+                                             cursor-nodes)))
+                                    (when
+                                        (> prospective-items
+                                           *mcp-pagination-maximum-items*)
+                                      (mcp-client--pagination-limit-error
+                                       method
+                                       "aggregate item count"
+                                       *mcp-pagination-maximum-items*))
+                                    (when
+                                        (> prospective-bytes
+                                           *mcp-pagination-maximum-aggregate-bytes*)
+                                      (mcp-client--pagination-limit-error
+                                       method
+                                       "aggregate encoded bytes"
+                                       *mcp-pagination-maximum-aggregate-bytes*))
+                                    (when
+                                        (> prospective-nodes
+                                           *mcp-pagination-maximum-aggregate-nodes*)
+                                      (mcp-client--pagination-limit-error
+                                       method
+                                       "aggregate node count"
+                                       *mcp-pagination-maximum-aggregate-nodes*))
+                                    (setf aggregate-items prospective-items
+                                          aggregate-bytes prospective-bytes
+                                          aggregate-nodes prospective-nodes)
+                                    (push (coerce page-items 'list)
+                                          pages)))
+                                (unless next-cursor
+                                  (return-from read-session
+                                    (mapcan
+                                     #'identity
+                                     (nreverse pages))))
+                                (setf (gethash next-cursor seen-cursors)
+                                      t
+                                      cursor next-cursor))))
                        finally
                           (error 'mcp-protocol-error
                                  :message
