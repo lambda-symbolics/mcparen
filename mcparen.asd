@@ -7,6 +7,7 @@
   :depends-on  (#:argo
                 #:babel
                 #:bordeaux-threads
+                #:cl+ssl
                 #:dexador
                 #:quri
                 #:ls-compat
@@ -37,7 +38,7 @@
 
 (asdf:defsystem #:mcparen/tests
   :description "Tests for Mcparen."
-  :depends-on  (#:mcparen/managed)
+  :depends-on  (#:mcparen/managed #:trivial-gray-streams)
   :serial      t
   :components  ((:module     "tests"
                  :serial     t
@@ -46,7 +47,9 @@
                               (:file "schema-tests")
                               (:file "mcp-tests")
                               (:file "managed-tests")
+                              (:file "http-body-tests")
                               (:file "tests"))))
   :perform     (asdf:test-op (operation component)
                  (declare (ignore operation component))
                  (uiop:symbol-call '#:mcparen '#:run-tests)))
+
