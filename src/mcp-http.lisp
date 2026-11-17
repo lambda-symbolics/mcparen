@@ -422,11 +422,99 @@ returned values. The default calls the thunk without adding a scope."
        :cause     nil))
     remaining))
 
+(-> mcp-http--unclean-eof-p (t) boolean)
+(defun mcp-http--unclean-eof-p (condition)
+  "True when CONDITION is the TLS error OpenSSL raises for a peer that closed without sending close_notify, so the bytes already read are the whole body.
+cl+ssl keeps only the printed OpenSSL error queue, so the reason text is the only signal available here."
+  (and (typep condition 'cl+ssl::ssl-error)
+       (let ((text (princ-to-string condition)))
+         (and (not (null (search "unexpected eof" text)))
+              (not (null (search "while reading" text)))))))
+(-> mcp-http--content-length (t) (or null integer))
+(defun mcp-http--content-length (headers)
+  "Return HEADERS' declared Content-Length as an integer.
+Signal a protocol error when the header is present but is not a run of digits."
+  (let ((value (mcp-http--header-value headers "Content-Length")))
+    (when value
+      (unless (and (plusp (length value))
+                   (every #'digit-char-p value))
+        (error 'mcp-protocol-error
+               :message (format nil
+                                "The MCP HTTP response declares a malformed Content-Length: ~A"
+                                value)
+               :method  nil
+               :payload nil))
+      (parse-integer value))))
+(-> mcp-http--body-octets
+    (t &key
+       (:content-length (or null integer))
+       (:source t)
+       (:limit (or null integer)))
+    (simple-array (unsigned-byte 8) (*)))
+(defun mcp-http--body-octets (stream &key content-length source limit)
+  "Read STREAM's octets, treating a TLS close without close_notify as end of input.
+Signal the message-too-large error before an octet past LIMIT characters' worth (four per character at most) is read, so the read stays bounded by the configured limit."
+  (let ((octets (make-array 8192
+                            :element-type '(unsigned-byte 8)
+                            :adjustable   t
+                            :fill-pointer 0)))
+    (loop
+      (when (and limit (> (length octets) (* 4 limit)))
+        (mcp-message-too-large-error source limit))
+      (let ((octet (handler-case (read-byte stream nil nil)
+                     (cl+ssl::ssl-error (condition)
+                       (if (mcp-http--unclean-eof-p condition)
+                           nil
+                           (error condition))))))
+        (unless octet
+          (return))
+        (vector-push-extend octet octets 8192)))
+    (when (and content-length
+               (/= content-length (length octets)))
+      (error 'mcp-protocol-error
+             :message (format nil
+                              "The MCP HTTP response body ended after ~D of ~D declared octets."
+                              (length octets)
+                              content-length)
+             :method  nil
+             :payload nil))
+    (coerce octets '(simple-array (unsigned-byte 8) (*)))))
+(defun mcp-http--read-octet-line (stream limit source)
+  "Read one LF-terminated line of octets, treating a TLS close without close_notify as end of input."
+  (let ((octets        (make-array 128
+                                   :element-type '(unsigned-byte 8)
+                                   :adjustable   t
+                                   :fill-pointer 0))
+        (end-of-file-p nil))
+    (loop
+      for octet = (handler-case (read-byte stream nil nil)
+                    (cl+ssl::ssl-error (condition)
+                      (if (mcp-http--unclean-eof-p condition)
+                          nil
+                          (error condition))))
+      do (cond
+           ((null octet)
+            (setf end-of-file-p t)
+            (return))
+           ((= octet 10)
+            (return))
+           (t
+            (when (>= (fill-pointer octets) limit)
+              (mcp-message-too-large-error source limit))
+            (vector-push-extend octet octets))))
+    (values (when (plusp (fill-pointer octets))
+              (babel:octets-to-string
+               (coerce octets '(simple-array (unsigned-byte 8) (*)))
+               :encoding :utf-8))
+            end-of-file-p)))
+
 (-> mcp-http--body->string
-    (mcp-streamable-http-transport t string)
+    (mcp-streamable-http-transport t string
+     &key (:content-length (or null integer)))
     string)
-(defun mcp-http--body->string (transport body source)
-  "Read response BODY within TRANSPORT's configured character limit."
+(defun mcp-http--body->string (transport body source &key content-length)
+  "Read response BODY within TRANSPORT's configured character limit.
+BODY's octets are decoded as UTF-8: MCP messages are UTF-8 by protocol."
   (let ((limit (mcp-http-transport-maximum-message-characters transport)))
     (cond
       ((null body)
@@ -436,13 +524,20 @@ returned values. The default calls the thunk without adding a scope."
          (mcp-message-too-large-error source limit))
        body)
       ((streamp body)
-       (stream-read-bounded-string body limit source))
+       (let ((text (babel:octets-to-string
+                    (mcp-http--body-octets body
+                                           :content-length content-length
+                                           :source         source
+                                           :limit          limit)
+                    :encoding :utf-8)))
+         (when (> (length text) limit)
+           (mcp-message-too-large-error source limit))
+         text))
       (t
        (error 'mcp-protocol-error
               :message "The MCP HTTP response body is not readable."
               :method  nil
               :payload nil)))))
-
 (-> mcp-http--response-message
     (string &key (:limit integer))
     hash-table)
@@ -575,7 +670,7 @@ protocol checks."
                   (mcp-http-transport-connect-timeout transport))
              :read-timeout  remaining
              :max-redirects 0
-             :force-string  t
+             :force-binary  t
              :keep-alive    nil
              (when message
                (list
@@ -654,14 +749,13 @@ protocol checks."
 (defun mcp-http--send-server-response
     (transport response &key deadline timeout)
   "POST one JSON-RPC RESPONSE generated for the server."
-  (multiple-value-bind (body status headers)
+  (multiple-value-bind (body status)
       (mcp-http--exchange
        transport ':post
        :message   response
        :deadline  deadline
        :timeout   timeout
        :operation "MCP HTTP server response")
-    (declare (ignore headers))
     (unwind-protect
          (progn
            (unless (= status 202)
@@ -873,7 +967,7 @@ protocol checks."
            :timeout   timeout
            :operation "MCP HTTP request"))
         (multiple-value-bind (raw-line end-of-file-p)
-            (stream-read-bounded-line
+            (mcp-http--read-octet-line
              stream limit "MCP SSE line")
           (when raw-line
             (let ((line (string-right-trim '(#\Return) raw-line)))
@@ -1171,7 +1265,7 @@ protocol checks."
                :connect-timeout connect-timeout
                :read-timeout    nil
                :max-redirects   0
-               :force-string    t
+               :force-binary    t
                :keep-alive      nil))
           (let ((released-p nil))
             (unwind-protect
@@ -1501,14 +1595,13 @@ protocol checks."
        (mcp-http--call-with-timeout
         transport timeout
         (lambda ()
-          (multiple-value-bind (body status headers)
+          (multiple-value-bind (body status)
               (mcp-http--exchange
                transport ':post
                :message   notification
                :deadline  deadline
                :timeout   timeout
                :operation "MCP HTTP notification")
-            (declare (ignore headers))
             (unwind-protect
                  (progn
                    (unless (= status 202)
@@ -1520,9 +1613,9 @@ protocol checks."
                             :method  (json-get notification "method")
                             :payload nil))
                    (let ((text
-                           (mcp-http--body->string
-                            transport body
-                            "MCP HTTP notification acknowledgement")))
+                          (mcp-http--body->string
+                           transport body
+                           "MCP HTTP notification acknowledgement")))
                      (unless (zerop
                               (length
                                (string-trim
@@ -1563,7 +1656,7 @@ protocol checks."
                    :read-timeout
                    (mcp-http-transport-connect-timeout transport)
                    :max-redirects 0
-                   :force-string  t
+                   :force-binary  t
                    :keep-alive    nil)))
              (error ()
                nil)))
@@ -1590,3 +1683,6 @@ protocol checks."
           (mcp-http-transport-listener-support-state transport) ':unknown
           (mcp-http-transport-listener-failure transport) nil))
   nil)
+
+
+

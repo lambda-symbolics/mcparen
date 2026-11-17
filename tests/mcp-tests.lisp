@@ -160,7 +160,7 @@
               (test-rpc-result
                request
                (json-object
-                "protocolVersion" "2025-03-26"
+                "protocolVersion" "2024-11-05"
                 "capabilities" (json-object)
                 "serverInfo"
                 (json-object

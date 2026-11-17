@@ -6,7 +6,7 @@
   "The newest MCP protocol version requested by this client.")
 
 (defparameter *mcp-supported-protocol-versions*
-  '("2025-11-25" "2025-06-18")
+  '("2025-11-25" "2025-06-18" "2025-03-26")
   "The MCP protocol versions this client can negotiate, newest first.")
 
 (defparameter *mcp-task-protocol-versions*
