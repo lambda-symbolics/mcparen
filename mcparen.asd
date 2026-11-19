@@ -1,5 +1,5 @@
 (asdf:defsystem #:mcparen
-  :description "A small Model Context Protocol client for Common Lisp."
+  :description "A reasonable Model Context Protocol client for Common Lisp."
   :author      "Lukáš Hozda"
   :license     "ISC"
   :version     "0.1.0"
