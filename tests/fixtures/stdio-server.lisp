@@ -145,6 +145,30 @@
      (json-object "pid" identifier)
      "isError" yason:false)))
 
+(defvar *fixture-first-subscription* nil
+  "The first request, retained so the fixture can interleave two streams.")
+
+(defun subscription-notification (request method fields)
+  "Build a notification correlated to REQUEST."
+  (setf (gethash "_meta" fields)
+        (json-object "io.modelcontextprotocol/subscriptionId" (json-get request "id")))
+  (json-object "jsonrpc" "2.0" "method" method "params" fields))
+
+(defun handle-listen (request)
+  "Accept list changes, interleaving the earlier stream before the second ack."
+  (when *fixture-first-subscription*
+    (write-json (subscription-notification
+                 *fixture-first-subscription* "notifications/tools/list_changed" (json-object))))
+  (write-json (subscription-notification
+               request "notifications/subscriptions/acknowledged"
+               (json-object "notifications" (json-object "toolsListChanged" t))))
+  (if *fixture-first-subscription*
+      (write-json (response request
+                            (json-object "resultType" "complete"
+                                         "_meta" (json-object "io.modelcontextprotocol/subscriptionId"
+                                                              (json-get request "id")))))
+      (setf *fixture-first-subscription* request)))
+
 (defun handle-request (request)
   "Handle one MCP fixture REQUEST."
   (let ((method (json-get request "method")))
@@ -160,6 +184,18 @@
            *server-request-parent*
            (text-result role)))
          (setf *server-request-parent* nil)))
+      ((string= method "server/discover")
+       (write-json (response request (json-object "resultType" "complete"
+                                                  "supportedVersions" #("2026-07-28")
+                                                  "capabilities" (json-object)))))
+      ((string= method "subscriptions/listen")
+       (handle-listen request))
+      ((string= method "fixture/flood-subscription")
+       (dotimes (index 129)
+         (write-json (subscription-notification
+                      *fixture-first-subscription* "notifications/tools/list_changed"
+                      (json-object "index" index))))
+       (write-json (response request (json-object "resultType" "complete"))))
       ((string= method "initialize")
        (unless
            (string= (json-get

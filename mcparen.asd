@@ -22,7 +22,9 @@
                               (:file "mcp-transport")
                               (:file "mcp-http")
                               (:file "mcp-stdio")
-                              (:file "mcp-client"))))
+                              (:file "mcp-tool-headers")
+                              (:file "mcp-client")
+                              (:file "mcp-subscriptions"))))
   :in-order-to ((asdf:test-op (asdf:test-op #:mcparen/tests))))
 
 (asdf:defsystem #:mcparen/managed
@@ -45,6 +47,7 @@
                               (:file "configuration-tests")
                               (:file "schema-tests")
                               (:file "mcp-tests")
+                              (:file "notification-tests")
                               (:file "managed-tests")
                               (:file "tests"))))
   :perform     (asdf:test-op (operation component)

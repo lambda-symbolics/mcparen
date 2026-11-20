@@ -2,6 +2,21 @@
 
 ;;;; -- Transport Protocol --
 
+(defparameter *mcp-modern-protocol-version* "2026-07-28"
+  "The implemented MCP revision with stateless per-request negotiation.")
+
+(-> mcp-modern-rpc-error-code-p (t) boolean)
+(defun mcp-modern-rpc-error-code-p (code)
+  "Recognize modern-only MCP errors without confusing legacy RPC errors with them."
+  (case code
+    ((-32020 -32021 -32022)
+     t)
+    (otherwise
+     nil)))
+
+(define-condition mcp-legacy-http-probe-response (mcp-transport-error) ()
+  (:documentation "An unrecognized HTTP 400 from the modern discovery probe."))
+
 (defclass mcp-transport ()
   ()
   (:documentation "The lifecycle and request boundary of one MCP connection."))
@@ -27,6 +42,33 @@
   "Leave transports without version-specific headers unchanged."
   (declare (ignore version))
   transport)
+
+(defgeneric mcp-transport-legacy-probe-error-p (transport condition)
+  (:documentation "Whether a discovery failure indicates legacy MCP on TRANSPORT."))
+
+(defmethod mcp-transport-legacy-probe-error-p ((transport mcp-transport) condition)
+  "Do not infer support for legacy MCP from an unknown transport error."
+  (declare (ignore condition))
+  nil)
+
+(-> mcp-subscription-wire-id (t) t)
+(defun mcp-subscription-wire-id (params)
+  "Extract the modern subscription correlation ID from PARAMS or RESULT."
+  (let ((meta (and (hash-table-p params) (json-get params "_meta"))))
+    (when (hash-table-p meta)
+      (json-get meta "io.modelcontextprotocol/subscriptionId"))))
+
+(defgeneric mcp-transport-listen (transport request timeout &key receive install-cancel)
+  (:documentation "Read one long-lived REQUEST; deliver notifications through RECEIVE and install a cancellation function. Return the final JSON-RPC response or NIL for EOF."))
+
+(defmethod mcp-transport-listen
+    ((transport mcp-transport) request timeout &key receive install-cancel)
+  "Reject subscriptions on transports without a long-lived exchange."
+  (declare (ignore timeout receive install-cancel))
+  (error 'mcp-protocol-error
+         :message "This MCP transport does not support subscriptions/listen."
+         :method  "subscriptions/listen"
+         :payload request))
 
 (defgeneric mcp-transport-commit-initialize-session (transport)
   (:documentation

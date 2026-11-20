@@ -1,10 +1,9 @@
 #+title: Mcparen
 
-Mcparen is a small Common Lisp client for the Model Context Protocol. Its core
-loads on SBCL and Clozure CL on Unix-like systems and implements MCP 2025-11-25
-and 2025-06-18 over standard I/O and Streamable HTTP. It requests the newer
-revision and accepts the older revision when selected during protocol
-negotiation.
+Mcparen is a small Common Lisp client for the Model Context Protocol over
+standard I/O and Streamable HTTP. It defaults to the MCP 2025-11-25 and
+2025-06-18 lifecycle. Use =:protocol-mode :auto= to probe for the MCP
+2026-07-28 stateless lifecycle and subscriptions before falling back.
 
 The library handles:
 
@@ -106,15 +105,67 @@ arguments, structured results, resources, and prompts.
 
 * Lifecycle
 
-=mcp-client-connect= performs =initialize= followed by
-=notifications/initialized=. Public operations reconnect a deliberately closed
-client when it is used again. =mcp-client-close= terminates owned resources.
-=mcp-client-detach= only closes inherited descriptors and is suitable for a
-forked image that must not signal a parent-owned server.
+By default, =mcp-client-connect= negotiates MCP 2025-11-25 or 2025-06-18
+with =initialize= followed by =notifications/initialized=. Pass
+=:protocol-mode :auto= to =make-mcp-client= to probe for 2026-07-28 with
+=server/discover=. Modern requests carry client metadata on each request.
+Modern HTTP uses POST without session IDs or a standalone GET listener.
+On a legacy probe response, the client uses the 2025 handshake.
+A recognized modern error is reported instead of trying =initialize=;
+2026-07-28 is the only modern revision supported. This mode covers the
+stateless lifecycle, ordinary complete results and subscriptions. It does not
+implement MRTR (input-required continuations) or modern extensions.
+
+Public operations reconnect a deliberately closed client when it is used
+again. =mcp-client-close= terminates owned resources. =mcp-client-detach=
+closes inherited descriptors without signaling a parent-owned server.
 
 On supported POSIX systems, a standard I/O server must enter a process group led
 by its direct child process. Shutdown closes stdin, then uses bounded TERM and
 KILL phases.
+
+* Notifications and subscriptions
+
+For MCP 2025-11-25 and 2025-06-18, pass =:notification-handler= to either
+transport constructor. The function receives the server notification method
+and JSON params. Stdio delivers notifications from server stdout; Streamable
+HTTP receives them on SSE response streams and on a standalone GET stream
+when the server supports it. Call =mcp-client-subscribe-resource= or
+=mcp-client-unsubscribe-resource= with a URI when the server advertises
+=resources.subscribe=. The subscription belongs to the current session;
+subscribe again after a reconnect if you still want updates. Receiving
+server notifications does not require advertising a client capability.
+
+For MCP 2026-07-28, call =mcp-client-listen= with a JSON object containing
+=toolsListChanged=, =promptsListChanged=, =resourcesListChanged= and/or a
+vector of URI strings at =resourceSubscriptions=. The call returns when the
+server acknowledges the request. Check =mcp-subscription-acknowledged-filter=
+for the accepted subset.
+
+#+begin_src lisp
+(let ((subscription
+        (mcparen:mcp-client-listen
+         client
+         (mcparen:json-object "resourceSubscriptions" #("file:///project/config")))))
+  (unwind-protect
+       (multiple-value-bind (event status failure)
+           (mcparen:mcp-subscription-next subscription :timeout 10)
+         (list status event failure))
+    (mcparen:mcp-subscription-cancel subscription)))
+#+end_src
+
+Use one consumer per subscription. =mcp-subscription-next= returns the full
+JSON-RPC notification with =:notification=, or an outcome: =:timeout=,
+=:complete=, =:dropped=, =:cancelled=, =:server-cancelled= or =:failed=.
+The third value contains a condition when available. A read timeout leaves
+the subscription open. Each handle buffers up to 128 notifications in arrival
+order. On overflow, the handle terminates; drain the queued events, then
+read =:failed= and its condition. A stalled consumer does not block unrelated
+stdio replies. Cancel to close only the HTTP response stream or send a stdio
+cancellation notification. A disconnect ends the handle; call
+=mcp-client-listen= again to re-establish the subscription after reconnecting.
+Mcparen does not automatically restore subscriptions when a stdio process is
+replaced.
 
 * Managed connections
 

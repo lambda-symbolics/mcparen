@@ -28,6 +28,8 @@
     "Accept"
     "Mcp-Session-Id"
     "MCP-Protocol-Version"
+    "Mcp-Method"
+    "Mcp-Name"
     "Last-Event-ID")
   "Headers owned by the Streamable HTTP transport.")
 
@@ -284,12 +286,61 @@ returned values. The default calls the thunk without adding a scope."
                 (<= #x21 (char-code character) #x7e))
               value)))
 
+(-> mcp-http--base64-utf8 (string) string)
+(defun mcp-http--base64-utf8 (value)
+  "Encode VALUE as standard padded Base64 over UTF-8 octets."
+  (let ((octets   (babel:string-to-octets value :encoding ':utf-8))
+        (alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"))
+    (with-output-to-string (output)
+      (loop for index from 0 below (length octets) by 3
+            for left = (- (length octets) index)
+            for word = (logior (ash (aref octets index) 16)
+                               (if (> left 1) (ash (aref octets (+ index 1)) 8) 0)
+                               (if (> left 2) (aref octets (+ index 2)) 0))
+            do (write-char (char alphabet (ldb (byte 6 18) word)) output)
+               (write-char (char alphabet (ldb (byte 6 12) word)) output)
+               (write-char (if (> left 1) (char alphabet (ldb (byte 6 6) word)) #\=) output)
+               (write-char (if (> left 2) (char alphabet (ldb (byte 6 0) word)) #\=) output)))))
+
+(-> mcp-http--encode-routing-value (string) string)
+(defun mcp-http--encode-routing-value (value)
+  "Protect routing VALUE against HTTP whitespace, controls and sentinel ambiguity."
+  (if (and (plusp (length value))
+           (every (lambda (character)
+                    (or (char= character #\Tab) (<= #x20 (char-code character) #x7e)))
+                  value)
+           (not (find (char value 0) '(#\Space #\Tab)))
+           (not (find (char value (1- (length value))) '(#\Space #\Tab)))
+           (not (and (<= 9 (length value)) (string= "=?base64?" value :end2 9))))
+      value
+      (format nil "=?base64?~A?=" (mcp-http--base64-utf8 value))))
+
+(defvar *mcp-http-tool-routing-headers* nil
+  "Validated headers dynamically supplied by the high-level tools/call API.")
+
+(-> mcp-http--modern-routing-headers (t) list)
+(defun mcp-http--modern-routing-headers (message)
+  "Mirror mandatory routing fields of one modern POST MESSAGE."
+  (let* ((method (and message (json-get message "method")))
+         (params (and method (json-get message "params")))
+         (name   (cond
+                   ((equal method "resources/read")
+                    (json-get params "uri"))
+                   ((member method '("tools/call" "prompts/get") :test #'equal)
+                    (json-get params "name")))))
+    (when method
+      (append (list (cons "Mcp-Method" method))
+              (when name
+                (list (cons "Mcp-Name" (mcp-http--encode-routing-value name))))
+              (when (equal method "tools/call")
+                *mcp-http-tool-routing-headers*)))))
+
 (-> mcp-http--request-headers
     (mcp-streamable-http-transport
-     &key (:method keyword) (:last-event-identifier t))
+     &key (:method keyword) (:last-event-identifier t) (:message t))
     list)
 (defun mcp-http--request-headers
-    (transport &key (method ':post) last-event-identifier)
+    (transport &key (method ':post) last-event-identifier message)
   "Resolve and validate the headers for one request over TRANSPORT."
   (let ((headers
           (handler-case
@@ -313,9 +364,11 @@ returned values. The default calls the thunk without adding a scope."
                :message   "The MCP HTTP header provider returned an invalid header."
                :transport transport
                :cause     nil))
-      (when (find (first entry)
-                  *mcp-http-managed-header-names*
-                  :test #'mcp-http--header-name=)
+      (when (or (find (first entry) *mcp-http-managed-header-names*
+                      :test #'mcp-http--header-name=)
+                (let ((name (string (first entry))))
+                  (and (<= 10 (length name))
+                       (string-equal "Mcp-Param-" name :end2 10))))
         (error 'mcp-transport-error
                :message
                (format nil
@@ -342,6 +395,10 @@ returned values. The default calls the thunk without adding a scope."
           (list (cons "Accept" "text/event-stream")))
          (:delete
           nil))
+       (when (and (eq method ':post)
+                  (equal (mcp-http-transport-protocol-version transport)
+                         *mcp-modern-protocol-version*))
+         (mcp-http--modern-routing-headers message))
        (when last-event-identifier
          (list (cons "Last-Event-ID" last-event-identifier)))
        (when (mcp-http-transport-session-identifier transport)
@@ -422,6 +479,46 @@ returned values. The default calls the thunk without adding a scope."
        :cause     nil))
     remaining))
 
+(-> mcp-http--read-utf8-line (stream integer string) (values t boolean))
+(defun mcp-http--read-utf8-line (stream limit source)
+  "Read one bounded UTF-8 line without waiting for a full decoder buffer."
+  (if (subtypep (stream-element-type stream) 'character)
+      (stream-read-bounded-line stream limit source)
+      (let* ((octet-limit (* 4 limit))
+             (octets      (make-array (min octet-limit 256)
+                                 :element-type '(unsigned-byte 8)
+                                 :adjustable   t
+                                 :fill-pointer 0)))
+        (loop for octet = (read-byte stream nil nil)
+              until (or (null octet) (= octet 10))
+              do (when (>= (length octets) octet-limit)
+                   (mcp-message-too-large-error source limit))
+                 (vector-push-extend octet octets)
+              finally
+                 (let ((line (when (or octet (plusp (length octets)))
+                               (babel:octets-to-string octets :encoding ':utf-8))))
+                   (when (and line (> (length line) limit))
+                     (mcp-message-too-large-error source limit))
+                   (return (values line (null octet))))))))
+
+(-> mcp-http--read-utf8-body (stream integer string) string)
+(defun mcp-http--read-utf8-body (stream limit source)
+  "Read a bounded UTF-8 response body from a binary HTTP exchange."
+  (let ((octet-limit (* 4 limit))
+        (octets      (make-array (min (* 4 limit) 256)
+                            :element-type '(unsigned-byte 8)
+                            :adjustable   t
+                            :fill-pointer 0)))
+    (loop for octet = (read-byte stream nil nil)
+          while octet
+          do (when (>= (length octets) octet-limit)
+               (mcp-message-too-large-error source limit))
+             (vector-push-extend octet octets))
+    (let ((text (babel:octets-to-string octets :encoding ':utf-8)))
+      (when (> (length text) limit)
+        (mcp-message-too-large-error source limit))
+      text)))
+
 (-> mcp-http--body->string
     (mcp-streamable-http-transport t string)
     string)
@@ -436,7 +533,9 @@ returned values. The default calls the thunk without adding a scope."
          (mcp-message-too-large-error source limit))
        body)
       ((streamp body)
-       (stream-read-bounded-string body limit source))
+       (if (subtypep (stream-element-type body) 'character)
+           (stream-read-bounded-string body limit source)
+           (mcp-http--read-utf8-body body limit source)))
       (t
        (error 'mcp-protocol-error
               :message "The MCP HTTP response body is not readable."
@@ -528,17 +627,55 @@ protocol checks."
               :payload nil))))
   nil)
 
+(-> mcp-http--check-modern-post-error
+    (mcp-streamable-http-transport t t &key (:status integer))
+    null)
+(defun mcp-http--check-modern-post-error (transport message body &key status)
+  "Read bounded JSON-RPC errors on modern POST, or mark a legacy probe response."
+  (let* ((method      (json-get message "method"))
+         (response
+           (and (member status '(400 404))
+                (handler-case
+                    (mcp-http--response-message
+                     (mcp-http--body->string transport body "MCP HTTP error response")
+                     :limit (mcp-http-transport-maximum-message-characters transport))
+                  (mcp-protocol-error () nil))))
+         (error-value (and (hash-table-p response) (json-get response "error")))
+         (code        (and (hash-table-p error-value) (json-get error-value "code"))))
+    (when (and (hash-table-p response)
+               (equal (json-get response "id") (json-get message "id"))
+               (or (mcp-modern-rpc-error-code-p code)
+                   (and (eql status 404) (eql code -32601)))
+               (eq (json-rpc-message-validate response) ':response))
+      (error 'mcp-rpc-error
+             :message (json-get error-value "message")
+             :method  method
+             :payload response
+             :code    code
+             :data    (json-get error-value "data")))
+    (when (and (eql status 400) (equal method "server/discover"))
+      (error 'mcp-legacy-http-probe-response
+             :message   "The discovery probe received an unrecognized HTTP 400."
+             :transport transport
+             :cause     nil))))
+
+(defmethod mcp-transport-legacy-probe-error-p
+    ((transport mcp-streamable-http-transport) condition)
+  "Permit fallback only for an unrecognized HTTP discovery rejection."
+  (typep condition 'mcp-legacy-http-probe-response))
+
 (-> mcp-http--exchange
     (mcp-streamable-http-transport keyword
      &key (:message t)
           (:deadline integer)
           (:timeout real)
           (:operation string)
-          (:last-event-identifier t))
+          (:last-event-identifier t)
+          (:streaming-p boolean))
     (values t integer t))
 (defun mcp-http--exchange
     (transport method
-     &key message deadline timeout operation last-event-identifier)
+     &key message deadline timeout operation last-event-identifier streaming-p)
   "Perform one bounded HTTP METHOD and return its owned body, status, and headers."
   (unless (mcp-transport-open-p transport)
     (error 'mcp-transport-error
@@ -554,9 +691,13 @@ protocol checks."
            (mcp-http--request-headers
             transport
             :method                method
+            :message               message
             :last-event-identifier last-event-identifier))
          (request-session
            (mcp-http--header-value request-headers "Mcp-Session-Id"))
+         (modern-p
+           (equal (mcp-http-transport-protocol-version transport)
+                  *mcp-modern-protocol-version*))
          (initialize-request-p
            (and (eq method ':post)
                 (hash-table-p message)
@@ -573,9 +714,11 @@ protocol checks."
              :connect-timeout
              (min remaining
                   (mcp-http-transport-connect-timeout transport))
-             :read-timeout  remaining
+             :read-timeout  (unless streaming-p remaining)
              :max-redirects 0
-             :force-string  t
+             ;; Dexador's character decoder fills ahead, which stalls silent SSE.
+             :force-binary  streaming-p
+             :force-string  (not streaming-p)
              :keep-alive    nil
              (when message
                (list
@@ -589,6 +732,8 @@ protocol checks."
             (unwind-protect
                  (progn
                    (unless (<= 200 status 299)
+                      (when (and modern-p (eq method ':post))
+                        (mcp-http--check-modern-post-error transport message body :status status))
                      (when (= status 404)
                        (mcp-http--expire-session
                         transport request-session nil))
@@ -599,19 +744,24 @@ protocol checks."
                                     status)
                             :transport transport
                             :cause     nil))
-                   (mcp-http--stage-initialize-session-header
-                    transport
-                    (mcp-http--header-value headers "Mcp-Session-Id")
-                    :request-session          request-session
-                    :initialize-request-p     initialize-request-p
-                    :allow-repeated-session-p (eq method ':post))
+                   (unless modern-p
+                     (mcp-http--stage-initialize-session-header
+                      transport
+                      (mcp-http--header-value headers "Mcp-Session-Id")
+                      :request-session          request-session
+                      :initialize-request-p     initialize-request-p
+                      :allow-repeated-session-p (eq method ':post)))
                    (setf body-released-p t)
                    (values body status headers))
               (unless body-released-p
                 (mcp-http--close-body body)))))
       (dexador.error:http-request-failed (cause)
         (let ((status (dexador.error:response-status cause)))
-          (mcp-http--close-body (dexador.error:response-body cause))
+            (let ((body (dexador.error:response-body cause)))
+              (unwind-protect
+                   (when (and modern-p (eq method ':post))
+                     (mcp-http--check-modern-post-error transport message body :status status))
+                (mcp-http--close-body body)))
           (when (eql status 404)
             (mcp-http--expire-session
              transport request-session cause))
@@ -689,6 +839,11 @@ protocol checks."
       (mcp-http--close-body body)))
   nil)
 
+(-> mcp-http--modern-p (mcp-streamable-http-transport) boolean)
+(defun mcp-http--modern-p (transport)
+  "Return true for the stateless HTTP binding."
+  (equal (mcp-http-transport-protocol-version transport) *mcp-modern-protocol-version*))
+
 (-> mcp-http--dispatch-server-message
     (mcp-streamable-http-transport hash-table
      &key (:expected-identifier t)
@@ -714,6 +869,11 @@ protocol checks."
             (equal identifier expected-identifier))
        (values message t))
       ((eq kind ':request)
+       (when (mcp-http--modern-p transport)
+         (error 'mcp-protocol-error
+                :message "A modern MCP server sent a request on an HTTP SSE stream."
+                :method  method
+                :payload message))
        (let ((handler (mcp-http-transport-request-handler transport)))
          (let ((response
                  (handler-case
@@ -772,6 +932,11 @@ protocol checks."
          (when handler
            (funcall handler method (json-get message "params"))))
        (values nil nil))
+      ((and (eq kind ':response) (mcp-http--modern-p transport))
+       (error 'mcp-protocol-error
+              :message "The MCP SSE response ID does not match its POST request."
+              :method  nil
+              :payload message))
       ((eq kind ':response)
        ;; A late response for another request may share an SSE stream. Its
        ;; owning request will receive its response through its own stream.
@@ -823,12 +988,12 @@ protocol checks."
           (:timeout (or null real))
           (:last-event-identifier t)
           (:retry-milliseconds integer)
-          (:reject-responses-p boolean))
+          (:reject-responses-p boolean) (:receive (or null function)))
     (values t boolean t integer boolean))
 (defun mcp-http--read-sse-fragment
     (transport stream expected-identifier
      &key deadline timeout last-event-identifier retry-milliseconds
-       reject-responses-p)
+        reject-responses-p receive)
   "Read one SSE fragment and return response state needed for resumption."
   (let ((data-lines        nil)
         (data-characters   0)
@@ -854,18 +1019,22 @@ protocol checks."
                    (clear-event)
                    (when (plusp (length trimmed))
                      (setf progress-p t)
-                     (multiple-value-setq
-                         (matching-response matching-p)
-                       (mcp-http--dispatch-server-message
-                        transport
-                        (json-decode
-                         trimmed
-                         :limit       limit
-                         :source-name "MCP SSE event data")
-                        :expected-identifier expected-identifier
-                        :deadline            deadline
-                        :timeout             timeout
-                        :reject-responses-p  reject-responses-p)))))))
+                     (let ((message (json-decode
+                                     trimmed
+                                     :limit       limit
+                                     :source-name "MCP SSE event data")))
+                       (if (and receive
+                                (eq (json-rpc-message-validate message) ':notification))
+                           (unless (funcall receive message)
+                             (return-from mcp-http--read-sse-fragment
+                               (values nil nil last-event-identifier retry-milliseconds progress-p)))
+                           (multiple-value-setq (matching-response matching-p)
+                             (mcp-http--dispatch-server-message
+                              transport message
+                              :expected-identifier expected-identifier
+                              :deadline            deadline
+                              :timeout             timeout
+                              :reject-responses-p  reject-responses-p)))))))))
       (loop
         (when deadline
           (mcp-http--require-time-remaining
@@ -873,8 +1042,7 @@ protocol checks."
            :timeout   timeout
            :operation "MCP HTTP request"))
         (multiple-value-bind (raw-line end-of-file-p)
-            (stream-read-bounded-line
-             stream limit "MCP SSE line")
+            (mcp-http--read-utf8-line stream limit "MCP SSE line")
           (when raw-line
             (let ((line (string-right-trim '(#\Return) raw-line)))
               (cond
@@ -1441,6 +1609,80 @@ protocol checks."
        :operation operation
        :cause     cause))))
 
+(defvar *mcp-http-listener-stop-tag* nil
+  "Identity of the interruptible subscription read on the current thread.")
+
+(-> mcp-http--interrupt-listener (t t) null)
+(defun mcp-http--interrupt-listener (reader tag)
+  "Unwind READER only while it owns the subscription identified by TAG."
+  (flet ((stop ()
+           "Leave the selected exchange; its owner closes the body on unwind."
+           (when (eq *mcp-http-listener-stop-tag* tag)
+             (throw tag nil))))
+    (if (eq reader (current-thread))
+        (stop)
+        ;; The reader can finish before the interrupt is sent.
+        (when (thread-alive-p reader)
+          (handler-case
+              (bordeaux-threads:interrupt-thread reader #'stop)
+            (error (condition)
+              (when (thread-alive-p reader)
+                (error condition)))))))
+  nil)
+
+(defmethod mcp-transport-listen
+    ((transport mcp-streamable-http-transport) request timeout &key receive install-cancel)
+  "Own one stateless subscription POST and its response stream until completion."
+  (mcp-http--call-with-exchange-scope
+   transport
+   (lambda ()
+     (multiple-value-bind (body status headers)
+         (mcp-http--call-with-timeout
+          transport timeout
+          (lambda ()
+            (mcp-http--exchange
+             transport ':post
+             :message     request
+             :deadline    (mcp-http--deadline timeout)
+             :timeout     timeout
+             :operation   "MCP HTTP subscription"
+             :streaming-p t))
+          :operation "MCP HTTP subscription")
+       (declare (ignore status))
+       (unwind-protect
+            (let ((content-type (mcp-http--header-value headers "Content-Type")))
+              (cond
+                ((mcp-http--content-type-p content-type "application/json")
+                 (let ((response
+                         (mcp-http--call-with-timeout
+                          transport timeout
+                          (lambda ()
+                            (mcp-http--response-message
+                             (mcp-http--body->string transport body "MCP subscription error")
+                             :limit (mcp-http-transport-maximum-message-characters transport)))
+                          :operation "MCP subscription error response")))
+                   (unless (nth-value 1 (gethash "error" response))
+                     (error 'mcp-protocol-error
+                            :message "A modern MCP subscription requires an SSE response."
+                            :method  "subscriptions/listen"
+                            :payload response))
+                   response))
+                (t
+                 (mcp-http--require-sse-body body headers "subscriptions/listen")
+                 (let ((tag    (list ':http-subscription))
+                       (reader (current-thread)))
+                   (catch tag
+                     (let ((*mcp-http-listener-stop-tag* tag))
+                       (funcall install-cancel
+                                (lambda (wire-p)
+                                  (declare (ignore wire-p))
+                                  (mcp-http--interrupt-listener reader tag)))
+                       (values (mcp-http--read-sse-fragment
+                                transport body (json-get request "id")
+                                :retry-milliseconds 0
+                                :receive            receive))))))))
+         (mcp-http--close-body body))))))
+
 (defmethod mcp-transport-request
     ((transport mcp-streamable-http-transport) request timeout)
   "Send REQUEST and read JSON or resumable SSE under one deadline."
@@ -1468,10 +1710,21 @@ protocol checks."
                      ((mcp-http--content-type-p
                        content-type "text/event-stream")
                       (mcp-http--require-sse-body body headers method)
-                      (mcp-http--read-sse-response
-                       transport body identifier
-                       :deadline deadline
-                       :timeout  timeout))
+                      (if (mcp-http--modern-p transport)
+                          (multiple-value-bind (response matched-p)
+                              (mcp-http--read-sse-fragment
+                               transport body identifier
+                               :deadline deadline :timeout timeout :retry-milliseconds 0)
+                            (unless matched-p
+                              (error 'mcp-transport-error
+                                     :message   "The modern MCP SSE response ended early."
+                                     :transport transport
+                                     :cause     nil))
+                            response)
+                          (mcp-http--read-sse-response
+                           transport body identifier
+                           :deadline deadline
+                           :timeout  timeout)))
                      ((mcp-http--content-type-p
                        content-type "application/json")
                       (mcp-http--response-message

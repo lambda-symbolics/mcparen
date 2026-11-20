@@ -3,11 +3,11 @@
 ;;;; -- Protocol Values --
 
 (defparameter *mcp-protocol-version* "2025-11-25"
-  "The newest MCP protocol version requested by this client.")
+  "The newest legacy MCP protocol version requested at initialization.")
 
 (defparameter *mcp-supported-protocol-versions*
-  '("2025-11-25" "2025-06-18")
-  "The MCP protocol versions this client can negotiate, newest first.")
+  '("2026-07-28" "2025-11-25" "2025-06-18")
+  "The MCP protocol versions this client implements, newest first.")
 
 (defparameter *mcp-task-protocol-versions*
   '("2025-11-25")
@@ -212,6 +212,11 @@ interprets it for protocol revisions that define task-augmented requests.")
     :reader        mcp-client-transport
     :type          mcp-transport
     :documentation "The connection transport.")
+   (protocol-mode
+    :initarg       :protocol-mode
+    :reader        mcp-client-protocol-mode
+    :type          (member :auto :legacy)
+    :documentation "Whether to probe modern MCP or directly initialize legacy MCP.")
    (client-info
     :initarg       :client-info
     :reader        mcp-client-client-info
@@ -237,6 +242,11 @@ interprets it for protocol revisions that define task-augmented requests.")
     :reader        mcp-client-lock
     :type          t
     :documentation "The lock serializing lifecycle and protocol requests.")
+   (subscriptions
+    :initform      (make-hash-table :test 'eq)
+    :reader        mcp-client--subscriptions
+    :type          hash-table
+    :documentation "Active modern subscriptions owned by this client.")
    (next-request-identifier
     :initform      1
     :accessor      mcp-client-next-request-identifier
@@ -279,6 +289,7 @@ interprets it for protocol revisions that define task-augmented requests.")
      &key (:name string)
           (:version string)
           (:title t)
+          (:protocol-mode (member :auto :legacy))
           (:capabilities hash-table)
           (:startup-timeout real)
           (:tool-timeout real))
@@ -288,6 +299,7 @@ interprets it for protocol revisions that define task-augmented requests.")
      &key (name "mcparen")
        (version "0.1.0")
        title
+       (protocol-mode ':legacy)
        (capabilities (json-object))
        (startup-timeout *mcp-default-startup-timeout*)
        (tool-timeout *mcp-default-tool-timeout*))
@@ -313,6 +325,7 @@ interprets it for protocol revisions that define task-augmented requests.")
       (setf (gethash "title" client-info) title))
     (make-instance 'mcp-client
                    :transport           transport
+                   :protocol-mode       protocol-mode
                    :client-info         client-info
                    :client-capabilities capabilities
                    :startup-timeout     startup-timeout
@@ -383,28 +396,105 @@ interprets it for protocol revisions that define task-augmented requests.")
       nil))
   nil)
 
+(-> mcp-client--request-object (mcp-client string t &key (:params t)) hash-table)
+(defun mcp-client--request-object (client method identifier &key params)
+  "Build a request, adding the standard per-request metadata for modern MCP."
+  (let ((request (json-object "jsonrpc" "2.0" "id" identifier "method" method)))
+    (when (equal (mcp-client-protocol-version client) *mcp-modern-protocol-version*)
+      (let ((body (json-object))
+            (meta (json-object)))
+        (when params
+          (maphash (lambda (key value) (setf (gethash key body) value)) params)
+          (let ((original (json-get params "_meta")))
+            (when (hash-table-p original)
+              (maphash (lambda (key value) (setf (gethash key meta) value)) original))))
+        (setf (gethash "io.modelcontextprotocol/protocolVersion" meta)
+              *mcp-modern-protocol-version*
+              (gethash "io.modelcontextprotocol/clientInfo" meta)
+              (mcp-client-client-info client)
+              (gethash "io.modelcontextprotocol/clientCapabilities" meta)
+              (mcp-client-client-capabilities client)
+              (gethash "_meta" body) meta
+              params body)))
+    (when params
+      (setf (gethash "params" request) params))
+    request))
+
 (-> mcp-client--request-with-identifier
     (mcp-client string &key (:params t) (:timeout real) (:identifier t))
     t)
 (defun mcp-client--request-with-identifier
     (client method &key params timeout identifier)
   "Send METHOD with PARAMS and preallocated IDENTIFIER."
-  (let ((request (json-object
-                   "jsonrpc" "2.0"
-                   "id" identifier
-                   "method" method)))
-    (when params
-      (setf (gethash "params" request) params))
+  (let* ((request   (mcp-client--request-object client method identifier :params params))
+         (transport (mcp-client-transport client))
+         (modern-p  (equal (mcp-client-protocol-version client)
+                           *mcp-modern-protocol-version*)))
     (handler-case
-        (mcp-client--validate-response
-         (mcp-transport-request
-          (mcp-client-transport client)
-          request timeout)
-         identifier method)
+        (let ((result (mcp-client--validate-response
+                       (mcp-transport-request transport request timeout)
+                       identifier method)))
+          (when (and modern-p
+                     (not (and (hash-table-p result)
+                               (equal (json-get result "resultType") "complete"))))
+            (error 'mcp-protocol-error
+                   :message "The modern MCP request did not return a complete result."
+                   :method  method
+                   :payload result))
+          result)
       (mcp-timeout (condition)
-        (when (mcp-client-connected-p client)
+        (when (and (mcp-client-connected-p client)
+                   (not (and modern-p (typep transport 'mcp-streamable-http-transport))))
           (mcp-client--send-cancellation client identifier timeout))
         (error condition)))))
+
+(-> mcp-client--discover-unlocked (mcp-client) t)
+(defun mcp-client--discover-unlocked (client)
+  "Probe modern MCP, returning :LEGACY only on binding-specific fallback."
+  (let ((transport (mcp-client-transport client)))
+    (mcp-transport-open transport)
+    (setf (mcp-client-protocol-version client) *mcp-modern-protocol-version*)
+    (mcp-transport-set-protocol-version transport *mcp-modern-protocol-version*)
+    (handler-case
+        (mcp-client--request-with-identifier
+         client "server/discover"
+         :timeout    (min 2 (mcp-client-startup-timeout client))
+         :identifier (mcp-client--next-identifier-unlocked client))
+      (mcp-error (condition)
+        (if (mcp-transport-legacy-probe-error-p transport condition)
+            ':legacy
+            (error condition))))))
+
+(-> mcp-client--establish-unlocked (mcp-client) mcp-client)
+(defun mcp-client--establish-unlocked (client)
+  "Discover a modern endpoint or perform the legacy handshake."
+  (let ((result (when (eq (mcp-client-protocol-mode client) ':auto)
+                  (mcp-client--discover-unlocked client))))
+    (cond
+      ((or (null result) (eq result ':legacy))
+       (setf (mcp-client-protocol-version client) nil)
+       (mcp-transport-set-protocol-version (mcp-client-transport client) nil)
+       (mcp-client--initialize-unlocked client))
+      (t
+       (let ((versions     (json-get result "supportedVersions"))
+             (capabilities (json-get result "capabilities"))
+             (meta         (json-get result "_meta")))
+         (unless (and (vectorp versions)
+                      (not (stringp versions))
+                      (every #'stringp versions)
+                      (find *mcp-modern-protocol-version* versions :test #'string=)
+                      (hash-table-p capabilities))
+           (error 'mcp-protocol-error
+                  :message "The discovery result lacks a compatible modern version or valid capabilities."
+                  :method  "server/discover"
+                  :payload result))
+         (setf (mcp-client-server-capabilities client) capabilities
+               (mcp-client-server-info client)
+               (and (hash-table-p meta) (json-get meta "io.modelcontextprotocol/serverInfo"))
+               (mcp-client-instructions client) (json-get result "instructions")
+               (mcp-client-connected-p client) t)
+         (incf (mcp-client--connection-generation client))
+         client)))))
 
 (-> mcp-client--initialize-unlocked (mcp-client) mcp-client)
 (defun mcp-client--initialize-unlocked (client)
@@ -428,7 +518,8 @@ interprets it for protocol revisions that define task-augmented requests.")
              :method  "initialize"
              :payload result))
     (let ((version (json-get result "protocolVersion")))
-      (unless (mcp-protocol-version-supported-p version)
+      (unless (and (mcp-protocol-version-supported-p version)
+                   (not (equal version *mcp-modern-protocol-version*)))
         (mcp-transport-close (mcp-client-transport client))
         (error 'mcp-protocol-error
                :message
@@ -478,7 +569,7 @@ interprets it for protocol revisions that define task-augmented requests.")
 (defun mcp-client--connect-unlocked (client)
   "Initialize CLIENT and clean up every partial connection on failure."
   (handler-case
-      (mcp-client--initialize-unlocked client)
+      (mcp-client--establish-unlocked client)
     (error (cause)
       (handler-case
           (mcp-transport-close (mcp-client-transport client))
@@ -502,10 +593,25 @@ interprets it for protocol revisions that define task-augmented requests.")
       (mcp-client--connect-unlocked client)))
   client)
 
+(defgeneric mcp-client--stop-subscription (subscription)
+  (:documentation "Stop a subscription without writing cancellation during client teardown."))
+
+(-> mcp-client--stop-subscriptions-unlocked (mcp-client) null)
+(defun mcp-client--stop-subscriptions-unlocked (client)
+  "End every subscription owned by CLIENT while the lifecycle lock is held."
+  (let ((subscriptions (mcp-client--subscriptions client)))
+    (maphash (lambda (subscription active-p)
+               (declare (ignore active-p))
+               (mcp-client--stop-subscription subscription))
+             subscriptions)
+    (clrhash subscriptions))
+  nil)
+
 (-> mcp-client-close (mcp-client) null)
 (defun mcp-client-close (client)
   "Close CLIENT and clear negotiated session state."
   (with-lock-held ((mcp-client-lock client))
+    (mcp-client--stop-subscriptions-unlocked client)
     (unwind-protect
          (mcp-transport-close (mcp-client-transport client))
       (setf (mcp-client-connected-p client) nil
@@ -520,6 +626,7 @@ interprets it for protocol revisions that define task-augmented requests.")
 (defun mcp-client-detach (client)
   "Forget inherited transport resources without affecting their owning process."
   (with-lock-held ((mcp-client-lock client))
+    (mcp-client--stop-subscriptions-unlocked client)
     (mcp-transport-detach (mcp-client-transport client))
     (setf (mcp-client-connected-p client) nil
           (mcp-client-protocol-version client) nil
@@ -552,7 +659,9 @@ interprets it for protocol revisions that define task-augmented requests.")
                                              :params     params
                                              :timeout    timeout
                                              :identifier identifier)
-      (mcp-session-expired ()
+      (mcp-session-expired (condition)
+        (when (equal (mcp-client-protocol-version client) *mcp-modern-protocol-version*)
+          (error condition))
         (with-lock-held ((mcp-client-lock client))
           (when (= generation (mcp-client--connection-generation client))
             (mcp-transport-close (mcp-client-transport client))
@@ -950,15 +1059,27 @@ SOURCE-NAME names it in any encoding failure."
        (t
         nil)))))
 
+(-> mcp-client--modern-http-p (mcp-client) boolean)
+(defun mcp-client--modern-http-p (client)
+  "Return true if CLIENT selected the modern HTTP binding."
+  (and (typep (mcp-client-transport client) 'mcp-streamable-http-transport)
+       (equal (mcp-client-protocol-version client) *mcp-modern-protocol-version*)))
+
 (-> mcp-client-list-tools (mcp-client) list)
 (defun mcp-client-list-tools (client)
   "Return every MCP tool, following opaque pagination cursors safely."
   (mcp-client--require-capability client "tools" "tools/list")
-  (mapcar
-   (lambda (raw)
-     (mcp-client--raw->tool
-      raw (mcp-client-protocol-version client)))
-   (mcp-client--list-all client "tools/list" "tools")))
+  (loop for raw in (mcp-client--list-all client "tools/list" "tools")
+        for tool = (mcp-client--raw->tool raw (mcp-client-protocol-version client))
+        when (or (not (mcp-client--modern-http-p client))
+                 (handler-case
+                     (progn
+                       (mcp-http--tool-header-paths (mcp-tool-input-schema tool))
+                       t)
+                   (mcp-invalid-tool-header (condition)
+                     (warn "Skipping MCP tool ~S: ~A" (mcp-tool-name tool) condition)
+                     nil)))
+          collect tool))
 
 (-> mcp-client-call-tool
     (mcp-client mcp-tool t &key (:timeout real))
@@ -984,7 +1105,10 @@ SOURCE-NAME names it in any encoding failure."
            :method  "tools/call"
            :payload arguments))
   (mcp-client--require-capability client "tools" "tools/call")
-  (let ((result
+  (let* ((*mcp-http-tool-routing-headers*
+           (when (mcp-client--modern-http-p client)
+             (mcp-http--tool-routing-headers (mcp-tool-input-schema tool) arguments)))
+         (result
           (mcp-client--request
            client
            "tools/call"
@@ -1056,6 +1180,60 @@ SOURCE-NAME names it in any encoding failure."
              :method  "resources/read"
              :payload result))
     result))
+
+(-> mcp-client--legacy-resource-subscription (mcp-client string string) hash-table)
+(defun mcp-client--legacy-resource-subscription (client method uri)
+  "Send one session-scoped legacy subscription request without replay."
+  (when (zerop (length uri))
+    (error 'mcp-protocol-error
+           :message "An MCP resource subscription needs a nonempty URI."
+           :method  method
+           :payload uri))
+  (mcp-client-connect client)
+  (multiple-value-bind (identifier generation)
+      (with-lock-held ((mcp-client-lock client))
+        (let* ((capabilities (mcp-client-server-capabilities client))
+               (resources    (and (hash-table-p capabilities)
+                                  (json-get capabilities "resources"))))
+          (unless (and (member (mcp-client-protocol-version client)
+                               '("2025-11-25" "2025-06-18") :test #'equal)
+                       (hash-table-p resources)
+                       (json-true-p (json-get resources "subscribe")))
+            (error 'mcp-protocol-error
+                   :message "The negotiated MCP server does not advertise legacy resource subscriptions."
+                   :method  method
+                   :payload capabilities)))
+        (values (mcp-client--next-identifier-unlocked client)
+                (mcp-client--connection-generation client)))
+    (let ((result
+            (handler-case
+                (mcp-client--request-with-identifier
+                 client method
+                 :params     (json-object "uri" uri)
+                 :timeout    (mcp-client-startup-timeout client)
+                 :identifier identifier)
+              (mcp-session-expired (condition)
+                (with-lock-held ((mcp-client-lock client))
+                  (when (= generation (mcp-client--connection-generation client))
+                    (mcp-transport-close (mcp-client-transport client))
+                    (setf (mcp-client-connected-p client) nil)))
+                (error condition)))))
+      (unless (hash-table-p result)
+        (error 'mcp-protocol-error
+               :message "The MCP subscription result is not an object."
+               :method  method
+               :payload result))
+      result)))
+
+(-> mcp-client-subscribe-resource (mcp-client string) hash-table)
+(defun mcp-client-subscribe-resource (client uri)
+  "Subscribe to updates for URI in the current 2025 MCP session."
+  (mcp-client--legacy-resource-subscription client "resources/subscribe" uri))
+
+(-> mcp-client-unsubscribe-resource (mcp-client string) hash-table)
+(defun mcp-client-unsubscribe-resource (client uri)
+  "Unsubscribe from updates for URI in the current 2025 MCP session."
+  (mcp-client--legacy-resource-subscription client "resources/unsubscribe" uri))
 
 (-> mcp-client-list-prompts (mcp-client) list)
 (defun mcp-client-list-prompts (client)

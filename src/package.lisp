@@ -70,18 +70,27 @@
            #:mcp-client-detach
            #:mcp-client-get-prompt
            #:mcp-client-instructions
+           #:mcp-client-listen
            #:mcp-client-list-prompts
            #:mcp-client-list-resource-templates
            #:mcp-client-list-resources
            #:mcp-client-list-tools
            #:mcp-client-ping
+           #:mcp-client-protocol-mode
            #:mcp-client-protocol-version
            #:mcp-client-read-resource
            #:mcp-client-server-capabilities
            #:mcp-client-server-info
            #:mcp-client-startup-timeout
+           #:mcp-client-subscribe-resource
            #:mcp-client-tool-timeout
            #:mcp-client-transport
+           #:mcp-client-unsubscribe-resource
+           #:mcp-subscription
+           #:mcp-subscription-acknowledged-filter
+           #:mcp-subscription-cancel
+           #:mcp-subscription-id
+           #:mcp-subscription-next
            #:mcp-content-block-type
            #:mcp-error
            #:mcp-error-message

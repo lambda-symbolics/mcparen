@@ -536,12 +536,18 @@ so it starts without crawling every system the host happens to have."
                  (if value
                      (parse-integer value)
                      0)))
-             (body (make-string content-length)))
-        (when (plusp content-length)
-          (let ((count (read-sequence body stream)))
-            (unless (= count content-length)
-              (error "HTTP request body ended after ~D of ~D characters."
-                     count content-length))))
+             (body
+               (with-output-to-string (output)
+                 (loop with count = 0
+                       while (< count content-length)
+                       do (let ((character (read-char stream nil nil)))
+                            (unless character
+                              (error "HTTP request body ended after ~D of ~D octets."
+                                     count content-length))
+                            (incf count (length (babel:string-to-octets (string character) :encoding ':utf-8)))
+                            (when (> count content-length)
+                              (error "HTTP Content-Length divided a UTF-8 character."))
+                            (write-char character output))))))
         (make-instance
          'test-http-request
          :method  (first parts)

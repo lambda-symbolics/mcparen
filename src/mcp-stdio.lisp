@@ -36,7 +36,18 @@
     :initform      nil
     :accessor      mcp-stdio-pending-response
     :type          t
-    :documentation "The matching decoded JSON-RPC response."))
+    :documentation "The matching decoded JSON-RPC response.")
+   (subscription-receiver
+    :initarg       :subscription-receiver
+    :initform      nil
+    :reader        mcp-stdio-pending-subscription-receiver
+    :type          (or null function)
+    :documentation "Receiver for notifications correlated to this subscription.")
+   (cancelled-p
+    :initform      nil
+    :accessor      mcp-stdio-pending-cancelled-p
+    :type          boolean
+    :documentation "True when the local owner stops waiting."))
   (:documentation "One concurrent stdio request awaiting a response."))
 
 (defclass mcp-stdio-transport (mcp-transport)
@@ -45,6 +56,11 @@
     :reader        mcp-stdio-transport-command
     :type          string
     :documentation "The executable used to start the MCP server.")
+   (protocol-version
+    :initform      nil
+    :accessor      mcp-stdio-transport-protocol-version
+    :type          (or null string)
+    :documentation "The selected revision for the current process connection.")
    (arguments
     :initarg       :arguments
     :initform      nil
@@ -552,6 +568,38 @@ method-not-found response. The function must be bounded and thread-safe."
         (error (mcp-stdio--projection-failure transport kind))))
     projected))
 
+(defmethod mcp-transport-set-protocol-version ((transport mcp-stdio-transport) version)
+  "Record the negotiated revision for this stdio connection."
+  (setf (mcp-stdio-transport-protocol-version transport) version)
+  transport)
+
+(defmethod mcp-transport-legacy-probe-error-p ((transport mcp-stdio-transport) condition)
+  "Fall back after a missing response or an implementation-defined legacy RPC error."
+  (or (typep condition 'mcp-timeout)
+      (and (typep condition 'mcp-rpc-error)
+           (not (mcp-modern-rpc-error-code-p (mcp-rpc-error-code condition))))))
+
+(-> mcp-stdio--dispatch-subscription (mcp-stdio-transport hash-table) boolean)
+(defun mcp-stdio--dispatch-subscription (transport message)
+  "Consume a modern subscription notification without calling user code on the reader."
+  (when (equal (mcp-stdio-transport-protocol-version transport) *mcp-modern-protocol-version*)
+    (let* ((params     (json-get message "params"))
+           (method     (json-get message "method"))
+           (identifier (or (mcp-subscription-wire-id params)
+                           (and (equal method "notifications/cancelled")
+                                (hash-table-p params) (json-get params "requestId")))))
+      (when identifier
+        (let ((pending
+                (with-lock-held ((mcp-stdio-transport-state-lock transport))
+                  (gethash identifier (mcp-stdio-transport-pending-requests transport)))))
+          (let ((receiver (and pending (mcp-stdio-pending-subscription-receiver pending))))
+            (when receiver
+              (unless (funcall receiver message)
+                (with-lock-held ((mcp-stdio-transport-state-lock transport))
+                  (setf (mcp-stdio-pending-cancelled-p pending) t)
+                  (condition-notify (mcp-stdio-pending-condition-variable pending)))))))
+        t))))
+
 (-> mcp-stdio--dispatch-message (mcp-stdio-transport t) null)
 (defun mcp-stdio--dispatch-message (transport message)
   "Dispatch one decoded server MESSAGE as a response, request, or notification."
@@ -571,6 +619,11 @@ method-not-found response. The function must be bounded and thread-safe."
                  (condition-notify
                   (mcp-stdio-pending-condition-variable pending)))))))))
     (:request
+     (when (equal (mcp-stdio-transport-protocol-version transport) *mcp-modern-protocol-version*)
+       (error 'mcp-protocol-error
+              :message "A modern MCP server sent a request on stdio."
+              :method  (json-get message "method")
+              :payload message))
      (let ((projected
              (mcp-stdio--project-message transport ':request message)))
        (if projected
@@ -588,7 +641,7 @@ method-not-found response. The function must be bounded and thread-safe."
      (let ((projected
              (mcp-stdio--project-message
               transport ':notification message)))
-       (when projected
+       (when (and projected (not (mcp-stdio--dispatch-subscription transport projected)))
          (let ((handler
                  (mcp-stdio-transport-notification-handler transport))
                (method (json-get projected "method"))
@@ -832,8 +885,8 @@ method-not-found response. The function must be bounded and thread-safe."
 
 (-> mcp-stdio--take-response
     (mcp-stdio-transport t mcp-stdio-pending-request
-     &key (:deadline integer) (:timeout real))
-    hash-table)
+     &key (:deadline (or null integer)) (:timeout real))
+    (or null hash-table))
 (defun mcp-stdio--take-response
     (transport identifier pending &key deadline timeout)
   "Wait for and remove IDENTIFIER's response before DEADLINE."
@@ -842,6 +895,8 @@ method-not-found response. The function must be bounded and thread-safe."
       (let ((response (mcp-stdio-pending-response pending)))
         (when response
           (return response)))
+      (when (mcp-stdio-pending-cancelled-p pending)
+        (return nil))
       (when (mcp-stdio-transport-reader-failure transport)
         (let ((failure (mcp-stdio-transport-reader-failure transport))
               (stderr  (mcp-stdio-transport-stderr-text transport)))
@@ -855,8 +910,8 @@ method-not-found response. The function must be bounded and thread-safe."
                              (and (plusp (length stderr)) stderr))
                      :transport transport
                      :cause     failure))))
-      (let ((remaining (mcp-stdio--remaining-seconds deadline)))
-        (unless (plusp remaining)
+      (let ((remaining (and deadline (mcp-stdio--remaining-seconds deadline))))
+        (when (and remaining (not (plusp remaining)))
           (error 'mcp-timeout
                  :message
                  (format nil "MCP stdio request ~S timed out after ~,2F seconds."
@@ -870,9 +925,11 @@ method-not-found response. The function must be bounded and thread-safe."
          (mcp-stdio-transport-state-lock transport)
          :timeout remaining)))))
 
-(defmethod mcp-transport-request
-    ((transport mcp-stdio-transport) request timeout)
-  "Serialize REQUEST and wait for its matching JSON-RPC response."
+(-> mcp-stdio--request (mcp-stdio-transport hash-table real
+                          &key (:receive (or null function)) (:install-cancel (or null function)))
+    (or null hash-table))
+(defun mcp-stdio--request (transport request timeout &key receive install-cancel)
+  "Serialize REQUEST and wait for its response or an explicit cancellation."
   (unless (mcp-transport-open-p transport)
     (error 'mcp-transport-error
            :message   "The MCP stdio transport is closed."
@@ -884,7 +941,7 @@ method-not-found response. The function must be bounded and thread-safe."
              :message "An MCP request requires a JSON-RPC identifier."
              :method  (json-get request "method")
              :payload request))
-    (let ((pending (make-instance 'mcp-stdio-pending-request)))
+    (let ((pending (make-instance 'mcp-stdio-pending-request :subscription-receiver receive)))
       (with-lock-held ((mcp-stdio-transport-state-lock transport))
         (when (gethash
                identifier
@@ -906,13 +963,39 @@ method-not-found response. The function must be bounded and thread-safe."
                                          :deadline  deadline
                                          :timeout   timeout
                                          :operation "JSON-RPC request")
+               (when install-cancel
+                 (funcall install-cancel
+                          (lambda (wire-p)
+                            (unwind-protect
+                                 (when wire-p
+                                   (mcp-transport-notify
+                                    transport
+                                    (json-object "jsonrpc" "2.0"
+                                                 "method" "notifications/cancelled"
+                                                 "params" (json-object "requestId" identifier))
+                                    (min timeout 2)))
+                              (with-lock-held ((mcp-stdio-transport-state-lock transport))
+                                (setf (mcp-stdio-pending-cancelled-p pending) t)
+                                (condition-notify
+                                 (mcp-stdio-pending-condition-variable pending)))))))
                (mcp-stdio--take-response transport identifier pending
-                                         :deadline deadline
-                                         :timeout  timeout))
+                                          :deadline (unless install-cancel deadline)
+                                         :timeout   timeout))
           (with-lock-held ((mcp-stdio-transport-state-lock transport))
             (remhash
              identifier
              (mcp-stdio-transport-pending-requests transport))))))))
+
+(defmethod mcp-transport-request ((transport mcp-stdio-transport) request timeout)
+  "Wait for a one-shot request within its deadline."
+  (mcp-stdio--request transport request timeout))
+
+(defmethod mcp-transport-listen
+    ((transport mcp-stdio-transport) request timeout &key receive install-cancel)
+  "Demultiplex notifications until the subscription responds or ends."
+  (mcp-stdio--request transport request timeout
+                      :receive        receive
+                      :install-cancel install-cancel))
 
 (defmethod mcp-transport-notify
     ((transport mcp-stdio-transport) notification timeout)
