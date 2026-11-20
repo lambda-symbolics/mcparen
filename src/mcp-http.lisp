@@ -988,12 +988,12 @@ protocol checks."
           (:timeout (or null real))
           (:last-event-identifier t)
           (:retry-milliseconds integer)
-          (:reject-responses-p boolean) (:receive (or null function)))
+          (:reject-responses-p boolean) (:receive (or null function)) (:watch-p boolean))
     (values t boolean t integer boolean))
 (defun mcp-http--read-sse-fragment
     (transport stream expected-identifier
      &key deadline timeout last-event-identifier retry-milliseconds
-        reject-responses-p receive)
+        reject-responses-p receive watch-p)
   "Read one SSE fragment and return response state needed for resumption."
   (let ((data-lines        nil)
         (data-characters   0)
@@ -1034,7 +1034,9 @@ protocol checks."
                               :expected-identifier expected-identifier
                               :deadline            deadline
                               :timeout             timeout
-                              :reject-responses-p  reject-responses-p)))))))))
+                               :reject-responses-p reject-responses-p)))
+                       (when (and watch-p matching-p)
+                         (setf matching-response (mcp-subscription--project-watch-response matching-response)))))))))
       (loop
         (when deadline
           (mcp-http--require-time-remaining
@@ -1064,8 +1066,8 @@ protocol checks."
                         (incf data-characters additional)
                         (push value data-lines)))
                      ((string= field "id")
-                      (unless (find (code-char 0) value)
-                        (setf last-event-identifier value)))
+                      (unless (or watch-p (find (code-char 0) value))
+                       (setf last-event-identifier value)))
                      ((and (string= field "retry")
                            (mcp-http--valid-retry-value-p value))
                       (setf retry-milliseconds
@@ -1630,58 +1632,86 @@ protocol checks."
                 (error condition)))))))
   nil)
 
+(-> mcp-http--listen
+    (mcp-streamable-http-transport hash-table real
+     &key (:receive function) (:install-cancel function) (:watch-p boolean))
+    (or null hash-table))
+(defun mcp-http--listen (transport request timeout &key receive install-cancel watch-p)
+  "Own a subscription response. For a managed watch, scope only the POST and body open."
+  (let ((body    nil)
+        (headers nil))
+    (labels ((open-body ()
+               "Acquire the body inside the exchange scope, including when scope cleanup fails."
+               (multiple-value-bind (stream status response-headers)
+                   (mcp-http--call-with-timeout
+                    transport timeout
+                    (lambda ()
+                      (mcp-http--exchange
+                       transport ':post
+                       :message     request
+                       :deadline    (mcp-http--deadline timeout)
+                       :timeout     timeout
+                       :operation   "MCP HTTP subscription"
+                       :streaming-p t))
+                    :operation "MCP HTTP subscription")
+                 (declare (ignore status))
+                 (setf body stream headers response-headers)))
+
+             (read-body ()
+               "Read the final response or run the long-lived SSE reader."
+               (let ((content-type (mcp-http--header-value headers "Content-Type")))
+                 (cond
+                   ((mcp-http--content-type-p content-type "application/json")
+                    (when watch-p
+                      (error 'mcp-protocol-error
+                             :message "The MCP tool watch did not open an SSE stream."
+                             :method  "subscriptions/listen"))
+                    (let ((response
+                            (mcp-http--call-with-timeout
+                             transport timeout
+                             (lambda ()
+                               (mcp-http--response-message
+                                (mcp-http--body->string transport body "MCP subscription error")
+                                :limit (mcp-http-transport-maximum-message-characters transport)))
+                             :operation "MCP subscription error response")))
+                      (unless (nth-value 1 (gethash "error" response))
+                        (error 'mcp-protocol-error
+                               :message "A modern MCP subscription requires an SSE response."
+                               :method  "subscriptions/listen"
+                               :payload response))
+                      response))
+                   (t
+                    (mcp-http--require-sse-body body headers "subscriptions/listen")
+                    (setf headers nil)
+                    (let ((tag    (list ':http-subscription))
+                          (reader (current-thread)))
+                      (catch tag
+                        (let ((*mcp-http-listener-stop-tag* tag))
+                          (funcall install-cancel
+                                   (lambda (wire-p)
+                                     (declare (ignore wire-p))
+                                     (mcp-http--interrupt-listener reader tag)))
+                          (values (mcp-http--read-sse-fragment
+                                   transport body (json-get request "id")
+                                   :retry-milliseconds 0
+                                   :receive            receive
+                                   :watch-p            watch-p))))))))))
+      (if watch-p
+          (unwind-protect
+               (progn
+                 (mcp-http--call-with-exchange-scope transport #'open-body)
+                 (read-body))
+            (mcp-http--close-body body))
+          (mcp-http--call-with-exchange-scope
+           transport
+           (lambda ()
+             (unwind-protect (progn (open-body) (read-body))
+               (mcp-http--close-body body))))))))
+
 (defmethod mcp-transport-listen
     ((transport mcp-streamable-http-transport) request timeout &key receive install-cancel)
-  "Own one stateless subscription POST and its response stream until completion."
-  (mcp-http--call-with-exchange-scope
-   transport
-   (lambda ()
-     (multiple-value-bind (body status headers)
-         (mcp-http--call-with-timeout
-          transport timeout
-          (lambda ()
-            (mcp-http--exchange
-             transport ':post
-             :message     request
-             :deadline    (mcp-http--deadline timeout)
-             :timeout     timeout
-             :operation   "MCP HTTP subscription"
-             :streaming-p t))
-          :operation "MCP HTTP subscription")
-       (declare (ignore status))
-       (unwind-protect
-            (let ((content-type (mcp-http--header-value headers "Content-Type")))
-              (cond
-                ((mcp-http--content-type-p content-type "application/json")
-                 (let ((response
-                         (mcp-http--call-with-timeout
-                          transport timeout
-                          (lambda ()
-                            (mcp-http--response-message
-                             (mcp-http--body->string transport body "MCP subscription error")
-                             :limit (mcp-http-transport-maximum-message-characters transport)))
-                          :operation "MCP subscription error response")))
-                   (unless (nth-value 1 (gethash "error" response))
-                     (error 'mcp-protocol-error
-                            :message "A modern MCP subscription requires an SSE response."
-                            :method  "subscriptions/listen"
-                            :payload response))
-                   response))
-                (t
-                 (mcp-http--require-sse-body body headers "subscriptions/listen")
-                 (let ((tag    (list ':http-subscription))
-                       (reader (current-thread)))
-                   (catch tag
-                     (let ((*mcp-http-listener-stop-tag* tag))
-                       (funcall install-cancel
-                                (lambda (wire-p)
-                                  (declare (ignore wire-p))
-                                  (mcp-http--interrupt-listener reader tag)))
-                       (values (mcp-http--read-sse-fragment
-                                transport body (json-get request "id")
-                                :retry-milliseconds 0
-                                :receive            receive))))))))
-         (mcp-http--close-body body))))))
+  "Own one public subscription POST and its response stream until completion."
+  (mcp-http--listen transport request timeout :receive receive :install-cancel install-cancel))
 
 (defmethod mcp-transport-request
     ((transport mcp-streamable-http-transport) request timeout)

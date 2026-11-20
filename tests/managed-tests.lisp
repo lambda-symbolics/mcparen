@@ -649,3 +649,206 @@
                         (lambda () (throw 'test-managed-startup :aborted)))))))))
       (test-assert (not (mcp-client-connected-p (mcp-server-runtime-client ready))))
       (test-equal :disconnected (mcp-server-runtime-state ready)))))
+
+(defclass test-tool-watch-server (mcp-managed-server) ()
+  (:documentation "Managed fixture that erases capabilities after watch sampling."))
+
+(defvar *test-tool-watch-scope-p* nil
+  "True only inside the current thread's fresh managed scope.")
+
+(defmethod mcp-managed-call-with-scope ((server test-tool-watch-server) function)
+  "Bind a transient launch marker, including during background replacement."
+  (let ((*test-tool-watch-scope-p* t))
+    (call-next-method server function)))
+
+(defmethod mcp-managed-prepare-client ((server test-tool-watch-server))
+  "Erase capability details, as a secret-capable consumer would."
+  (test-assert *test-tool-watch-scope-p*)
+  (let ((capabilities (mcp-client-server-capabilities (mcp-server-runtime-client server))))
+    (when (hash-table-p (json-get capabilities "tools"))
+      (setf (gethash "tools" capabilities) (json-object)))))
+
+(-> test-tool-watch-stdio (string &key (:opt-in-p boolean) (:timeout real))
+    (values test-tool-watch-server mcp-client))
+(defun test-tool-watch-stdio (mode &key (opt-in-p t) (timeout 3))
+  "Make a real credential-scoped stdio fixture with the notification projection seam."
+  (let* ((transport (make-mcp-stdio-transport
+                     (namestring sb-ext:*runtime-pathname*)
+                     :arguments            (append (test-fixture-script-arguments "stdio-server.lisp")
+                                                   (list "persistent" mode))
+                     :environment-function (lambda ()
+                                             (test-assert *test-tool-watch-scope-p*)
+                                             nil)
+                     :ingress-projector    (lambda (kind value)
+                                             (if (eq kind :notification)
+                                                 (mcp-tool-watch-project-notification value)
+                                                 value))))
+         (client    (make-mcp-client transport :protocol-mode ':auto :startup-timeout timeout)))
+    (values (apply #'make-instance 'test-tool-watch-server :name "watch" :client client
+                   (when opt-in-p (list :watch-tool-changes-p t)))
+            client)))
+
+(-> test-tool-watch-command (mcp-client string) hash-table)
+(defun test-tool-watch-command (client method)
+  "Run one local fixture command, without resubmitting on replacement."
+  (mcp-client--request client method :timeout 3))
+
+(define-test managed-tool-watch-stdio-opt-in-and-capability
+  (dolist (case '(("true" nil 0) ("true" t 1) ("false" t 0) ("missing" t 0) ("invalid" t 0)))
+    (destructuring-bind (mode opt-in-p expected) case
+      (multiple-value-bind (runtime client) (test-tool-watch-stdio mode :opt-in-p opt-in-p)
+        (declare (ignore client))
+        (unwind-protect
+             (progn
+               (mcp-server-runtime-connect runtime)
+               (test-equal (format nil "listens-~D" expected)
+                           (mcp-tool-name (first (mcp-server-runtime-tools runtime))))
+               (test-assert (not (mcp-server-runtime-tools-stale-p runtime))))
+          (mcp-server-runtime-close runtime))))))
+
+(define-test managed-tool-watch-stdio-denial-and-bounded-ack
+  (dolist (mode '("denied" "malformed" "silent"))
+    (multiple-value-bind (runtime client) (test-tool-watch-stdio mode :timeout 2)
+      (unwind-protect
+           (ls-compat:with-timeout 8
+             (mcp-server-runtime-connect runtime)
+             (test-equal "listens-1" (mcp-tool-name (first (mcp-server-runtime-tools runtime))))
+             (dotimes (index 3)
+               (mcp-server-runtime-request-tool-refresh runtime)
+               (mcp-server-runtime-connect runtime))
+             (test-equal 1 (json-get (test-tool-watch-command client "fixture/subscription-state") "listens"))
+             (test-assert (not (mcp-server-runtime-tools-stale-p runtime))))
+        (mcp-server-runtime-close runtime)))))
+
+(define-test managed-tool-watch-stdio-replacement-change-and-rearm
+  (multiple-value-bind (runtime client) (test-tool-watch-stdio "true")
+    (unwind-protect
+         (progn
+           (mcp-server-runtime-connect runtime)
+           (let* ((initial      (mcp-managed--tool-watch runtime))
+                  (subscription (mcp-managed-tool-watch-subscription initial))
+                  (id           (mcp-subscription-id subscription)))
+             (test-tool-watch-command client "fixture/subscription-event")
+             (test-assert (mcp-server-runtime-tools-stale-p runtime))
+             (mcp-server-runtime-connect runtime)
+             (test-signals mcp-transport-error
+               (test-tool-watch-command client "fixture/exit-unexpectedly"))
+             (test-assert (test-wait-until
+                           (lambda ()
+                             (with-lock-held ((mcp-subscription--lock subscription))
+                               (and (/= id (mcp-subscription-id subscription))
+                                    (mcp-subscription--acknowledged-p subscription)))) 5))
+             (mcp-server-runtime-connect runtime)
+             (test-assert (eq initial (mcp-managed--tool-watch runtime)))
+             (test-equal 1 (json-get (test-tool-watch-command client "fixture/subscription-state") "listens"))
+             (test-tool-watch-command client "fixture/cancel-subscription")
+             (test-assert (mcp-server-runtime-tools-stale-p runtime))
+             (test-equal ':server-cancelled (nth-value 1 (mcp-subscription-next subscription :timeout 1)))
+             (test-assert (null (mcp-subscription--failure subscription)))
+             (test-equal 1 (json-get (test-tool-watch-command client "fixture/subscription-state") "listens"))
+             (mcp-server-runtime-connect runtime)
+             (test-equal "listens-2" (mcp-tool-name (first (mcp-server-runtime-tools runtime))))
+             (test-assert (not (mcp-server-runtime-tools-stale-p runtime)))
+             (mcp-managed--signal-tool-watch runtime initial ':changed :generation (mcp-client-connection-generation client))
+             (test-assert (not (mcp-server-runtime-tools-stale-p runtime)))
+             (mcp-server-runtime-detach runtime)
+             (test-assert (null (mcp-managed--tool-watch runtime)))))
+      (mcp-server-runtime-close runtime))))
+
+(define-test managed-tool-watch-http-scope-and-rearm
+  (let ((lock     (make-lock "tool watch HTTP fixture"))
+        (scope    (make-instance 'test-http-exchange-scope))
+        (listens  0)
+        (commands nil))
+    (labels ((enqueue (command)
+               "Ask the first open stream to send a fixture event."
+               (with-lock-held (lock) (push command commands)))
+
+             (take-command ()
+               "Read the next fixture command, if any."
+               (with-lock-held (lock) (pop commands)))
+
+             (send-event (stream identifier method params)
+               "Write one SSE event with extra data that must not survive receipt."
+               (setf (gethash "_meta" params) (test-subscription-meta identifier)
+                     (gethash "extra" params) "fixture-only")
+               (write-string (test-sse-body (mcp-client--notification method params)) stream)
+               (finish-output stream))
+
+             (respond (server exchange)
+               "Serve discovery, tools and the long-lived watch on separate local connections."
+               (declare (ignore server))
+               (let* ((request    (json-decode (test-http-request-body exchange)))
+                      (method     (json-get request "method"))
+                      (identifier (json-get request "id"))
+                      (headers    (list (cons "Content-Type" "application/json"))))
+                 (test-equal "fixture-auth" (rest (assoc "authorization" (test-http-request-headers exchange)
+                                                        :test #'string=)))
+                 (cond
+                   ((equal method "server/discover")
+                    (values 200 headers (test-json-response-body
+                                         request (json-object "resultType" "complete"
+                                                              "supportedVersions" #("2026-07-28")
+                                                              "capabilities" (json-object "tools" (json-object "listChanged" t))))))
+                   ((equal method "tools/list")
+                    (values 200 headers (test-json-response-body
+                                         request (json-object "resultType" "complete" "tools"
+                                                              (vector (json-object
+                                                                       "name" (format nil "listens-~D" (with-lock-held (lock) listens))
+                                                                       "inputSchema" (json-object "type" "object")))))))
+                   ((equal method "subscriptions/listen")
+                    (let ((sequence (with-lock-held (lock) (incf listens))))
+                      (values 200 (list (cons "Content-Type" "text/event-stream"))
+                              (make-test-http-streaming-body
+                               (lambda (stream)
+                                 (send-event stream (1+ identifier) "notifications/subscriptions/acknowledged"
+                                             (json-object "notifications" (json-object "toolsListChanged" t)))
+                                 (send-event stream identifier "notifications/subscriptions/acknowledged"
+                                             (json-object "notifications"
+                                                          (json-object "toolsListChanged" (if (= sequence 1) t (json-decode "false")))))
+                                 (when (= sequence 1)
+                                   (loop repeat 2
+                                         do (let ((command nil))
+                                              (test-assert (test-wait-until (lambda () (setf command (take-command))) 5))
+                                              (ecase command
+                                                (:change
+                                                 (send-event stream (1+ identifier) "notifications/tools/list_changed" (json-object))
+                                                 (send-event stream identifier "notifications/tools/list_changed" (json-object)))
+                                                (:cancel
+                                                 (send-event stream identifier "notifications/cancelled"
+                                                             (json-object "requestId" identifier "reason" "fixture-only"))))))))))))
+                   (t
+                    (error "Unexpected fixture HTTP method ~S" method))))))
+      (with-test-http-server (server #'respond)
+        (let* ((transport (make-mcp-streamable-http-transport
+                           (test-http-server-url server)
+                           :exchange-scope-function (test-http-exchange-scope-function scope)
+                           :headers-function        (lambda ()
+                                                      (test-assert (test-http-exchange-scope-active-p scope))
+                                                      (list (cons "Authorization" "fixture-auth")))))
+               (client    (make-mcp-client transport :protocol-mode ':auto :startup-timeout 2))
+               (runtime   (make-instance 'test-tool-watch-server :name "http watch" :client client :watch-tool-changes-p t)))
+          (unwind-protect
+               (progn
+                 (mcp-server-runtime-connect runtime)
+                 (test-equal "listens-1" (mcp-tool-name (first (mcp-server-runtime-tools runtime))))
+                 (test-assert (not (test-http-exchange-scope-active-p scope)))
+                 (let* ((subscription (mcp-managed-tool-watch-subscription (mcp-managed--tool-watch runtime)))
+                        (version      (mcp-server-runtime-tools-change-version runtime)))
+                   (enqueue ':change)
+                   (test-assert (test-wait-until (lambda () (mcp-server-runtime-tools-stale-p runtime)) 2))
+                   (test-equal (1+ version) (mcp-server-runtime-tools-change-version runtime))
+                   (test-assert (null (mcp-subscription--events subscription)))
+                   (mcp-server-runtime-connect runtime)
+                   (enqueue ':cancel)
+                   (test-equal ':server-cancelled (nth-value 1 (mcp-subscription-next subscription :timeout 2)))
+                   (test-assert (null (mcp-subscription--failure subscription)))
+                   (test-equal 1 (with-lock-held (lock) listens))
+                   (mcp-server-runtime-connect runtime)
+                   (test-equal "listens-2" (mcp-tool-name (first (mcp-server-runtime-tools runtime))))
+                   (dotimes (index 2)
+                     (mcp-server-runtime-request-tool-refresh runtime)
+                     (mcp-server-runtime-connect runtime))
+                   (test-equal 2 (with-lock-held (lock) listens))
+                   (test-assert (not (test-http-exchange-scope-active-p scope)))))
+            (mcp-server-runtime-close runtime)))))))

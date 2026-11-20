@@ -43,6 +43,8 @@
     :reader        mcp-stdio-pending-subscription-receiver
     :type          (or null function)
     :documentation "Receiver for notifications correlated to this subscription.")
+   (watch-p :initarg :watch-p :initform nil :reader mcp-stdio-pending-watch-p
+            :documentation "Whether to retain only tool watch response metadata.")
    (cancelled-p
     :initform      nil
     :accessor      mcp-stdio-pending-cancelled-p
@@ -616,7 +618,10 @@ method-not-found response. The function must be bounded and thread-safe."
                       identifier
                       (mcp-stdio-transport-pending-requests transport))))
                (when pending
-                 (setf (mcp-stdio-pending-response pending) projected)
+                  (setf (mcp-stdio-pending-response pending)
+                        (if (mcp-stdio-pending-watch-p pending)
+                            (mcp-subscription--project-watch-response projected)
+                            projected))
                  (condition-notify
                   (mcp-stdio-pending-condition-variable pending)))))))))
     (:request
@@ -944,15 +949,15 @@ method-not-found response. The function must be bounded and thread-safe."
   nil)
 
 (-> mcp-stdio--start-request
-    (mcp-stdio-transport hash-table &key (:deadline integer) (:timeout real) (:receive (or null function)))
+    (mcp-stdio-transport hash-table &key (:deadline integer) (:timeout real) (:receive (or null function)) (:watch-p boolean))
     (values t mcp-stdio-pending-request))
-(defun mcp-stdio--start-request (transport request &key deadline timeout receive)
+(defun mcp-stdio--start-request (transport request &key deadline timeout receive watch-p)
   "Register and write REQUEST before waiting for a response."
   (unless (mcp-transport-open-p transport)
     (error 'mcp-transport-error :message "The MCP stdio transport is closed."
                                :transport transport :cause nil))
   (let ((identifier (json-get request "id" :absent))
-        (pending    (make-instance 'mcp-stdio-pending-request :subscription-receiver receive)))
+        (pending    (make-instance 'mcp-stdio-pending-request :subscription-receiver receive :watch-p watch-p)))
     (when (eq identifier :absent)
       (error 'mcp-protocol-error :message "An MCP request requires a JSON-RPC identifier."
                                 :method (json-get request "method") :payload request))

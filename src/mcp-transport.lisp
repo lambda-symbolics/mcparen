@@ -58,6 +58,20 @@
     (when (hash-table-p meta)
       (json-get meta "io.modelcontextprotocol/subscriptionId"))))
 
+(-> mcp-subscription--project-watch-response (hash-table) hash-table)
+(defun mcp-subscription--project-watch-response (response)
+  "Keep completion metadata only, including no server diagnostic on RPC failure."
+  (let* ((identifier (json-get response "id"))
+         (result     (json-get response "result"))
+         (wire-id    (mcp-subscription-wire-id result)))
+    (json-object "jsonrpc" "2.0" "id" (and (integerp identifier) identifier)
+                 "result"
+                 (if (and (integerp identifier) (hash-table-p result) (eql identifier wire-id)
+                          (equal (json-get result "resultType") "complete"))
+                     (json-object "resultType" "complete"
+                                  "_meta" (json-object "io.modelcontextprotocol/subscriptionId" wire-id))
+                     (json-object)))))
+
 (defgeneric mcp-transport-listen (transport request timeout &key receive install-cancel)
   (:documentation "Read one long-lived REQUEST; deliver notifications through RECEIVE and install a cancellation function. Return the final JSON-RPC response or NIL for EOF."))
 

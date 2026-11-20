@@ -91,6 +91,7 @@
            #:mcp-subscription-cancel
            #:mcp-subscription-id
            #:mcp-subscription-next
+           #:mcp-tool-watch-project-notification
            #:mcp-content-block-type
            #:mcp-error
            #:mcp-error-message

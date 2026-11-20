@@ -104,6 +104,13 @@
    (tools-change-lock :initform      (make-lock "MCP discovery notifications")
                       :reader        mcp-server-runtime-tools-change-lock
                       :documentation "Independent lock for reentrant notifications.")
+   (watch-tool-changes-p :initarg :watch-tool-changes-p :initform nil
+                         :reader mcp-managed-watch-tool-changes-p :type boolean
+                         :documentation "Subscribe automatically on modern connections with tools.listChanged.")
+   (tool-watch :initform nil :accessor mcp-managed--tool-watch
+               :documentation "Current watch ownership and retry state, protected by the tools change lock.")
+   (tool-watch-capability :initform nil :accessor mcp-managed--tool-watch-capability
+                          :documentation "Generation and boolean grant sampled before client projection.")
    (tools-discovered-version
     :initform 0 :accessor mcp-server-runtime-tools-discovered-version
     :type (integer 0) :documentation "Version covered by the last attempt.")
@@ -175,23 +182,137 @@
   (with-lock-held ((mcp-server-runtime-tools-change-lock runtime))
     (incf (mcp-server-runtime-tools-change-version runtime))))
 
+(defstruct (mcp-managed-tool-watch (:constructor mcp-managed--make-tool-watch (generation)))
+  "Identity token for one logical watch. Guard its state with the tools change lock."
+  (generation nil :type integer)
+  (state ':opening :type keyword)
+  (subscription nil :type (or null mcp-subscription)))
+
+(-> mcp-managed--signal-tool-watch (mcp-managed-server mcp-managed-tool-watch keyword &key (:generation integer)) null)
+(defun mcp-managed--signal-tool-watch (runtime watch signal &key (generation 0))
+  "Accept only the owner's metadata signal. Never enter a lifecycle or runtime lock here."
+  (with-lock-held ((mcp-server-runtime-tools-change-lock runtime))
+    (when (eq watch (mcp-managed--tool-watch runtime))
+      (let ((state (mcp-managed-tool-watch-state watch)))
+        (case signal
+          (:opening
+           (unless (= generation (mcp-managed-tool-watch-generation watch))
+             (setf (mcp-managed-tool-watch-generation watch) generation
+                   (mcp-managed-tool-watch-state watch) ':restoring)))
+          (:acknowledged
+           (when (eq state :restoring)
+             (incf (mcp-server-runtime-tools-change-version runtime)))
+           (setf (mcp-managed-tool-watch-state watch) ':active))
+          (:changed
+           (when (eq state :active)
+             (incf (mcp-server-runtime-tools-change-version runtime))))
+          (:terminal
+           (when (member state '(:active :restoring))
+             (incf (mcp-server-runtime-tools-change-version runtime)))
+           (setf (mcp-managed-tool-watch-state watch)
+                 (if (eq state :active) ':lost ':unavailable)
+                 (mcp-managed-tool-watch-subscription watch) nil))))))
+  nil)
+
+(-> mcp-managed--forget-tool-watch (mcp-managed-server) null)
+(defun mcp-managed--forget-tool-watch (runtime)
+  "Invalidate ownership before stopping the local exchange. Hold the runtime lock."
+  (let ((subscription
+          (with-lock-held ((mcp-server-runtime-tools-change-lock runtime))
+            (prog1 (let ((watch (mcp-managed--tool-watch runtime)))
+                     (and watch (mcp-managed-tool-watch-subscription watch)))
+              (setf (mcp-managed--tool-watch runtime) nil
+                    (mcp-managed--tool-watch-capability runtime) nil)))))
+    (when subscription
+      (mcp-client--stop-subscription subscription)))
+  nil)
+
+(-> mcp-managed--prepare-tool-watch (mcp-managed-server integer boolean) boolean)
+(defun mcp-managed--prepare-tool-watch (runtime generation eligible-p)
+  "Cache a generation's grant and project discovery metadata in the active scope."
+  (setf (mcp-managed--tool-watch-capability runtime) (cons generation eligible-p))
+  (mcp-managed-prepare-client runtime)
+  eligible-p)
+
+(-> mcp-managed--ensure-tool-watch (mcp-managed-server integer) null)
+(defun mcp-managed--ensure-tool-watch (runtime generation)
+  "Register before tools/list and wait for the grant without following the stream."
+  (when (mcp-managed-watch-tool-changes-p runtime)
+    (let ((watch            nil)
+          (old-subscription nil)
+          (start-p          nil))
+      (with-lock-held ((mcp-server-runtime-tools-change-lock runtime))
+        (let ((current (mcp-managed--tool-watch runtime)))
+          (when (and current (/= generation (mcp-managed-tool-watch-generation current)))
+            (setf old-subscription (mcp-managed-tool-watch-subscription current)
+                  (mcp-managed--tool-watch runtime) nil
+                  current nil))
+          (let ((grant (mcp-managed--tool-watch-capability runtime)))
+            (when (and grant (eql (first grant) generation) (rest grant))
+              (cond
+                ((or (null current) (eq (mcp-managed-tool-watch-state current) :lost))
+                 (setf watch (mcp-managed--make-tool-watch generation)
+                       (mcp-managed--tool-watch runtime) watch
+                       start-p t))
+                ((eq (mcp-managed-tool-watch-state current) :restoring)
+                 (setf watch current)))))))
+      (when old-subscription
+        (mcp-client--stop-subscription old-subscription))
+      (when watch
+        (let* ((client  (mcp-server-runtime-client runtime))
+               (timeout (mcp-client-startup-timeout client)))
+          (flet ((signal-watch (signal exchange-generation)
+                   (mcp-managed--signal-tool-watch runtime watch signal :generation exchange-generation))
+                 (restore-watch (operation argument)
+                   (ecase operation
+                     (:restart
+                      (with-lock-held ((mcp-server-runtime-lock runtime))
+                        (when (with-lock-held ((mcp-server-runtime-tools-change-lock runtime))
+                                (eq watch (mcp-managed--tool-watch runtime)))
+                          (mcp-managed-call-with-scope runtime argument))))
+                     (:prepare
+                      (mcp-managed--prepare-tool-watch runtime (mcp-client--connection-generation client) argument)))))
+            (let ((subscription
+                    (if start-p
+                        (handler-case
+                            (let ((subscription (mcp-subscription--start
+                                                 client (json-object "toolsListChanged" t) timeout
+                                                 :watch-signal #'signal-watch :watch-restore #'restore-watch)))
+                              (with-lock-held ((mcp-server-runtime-tools-change-lock runtime))
+                                (when (member (mcp-managed-tool-watch-state watch) '(:opening :active))
+                                  (setf (mcp-managed-tool-watch-subscription watch) subscription)))
+                              subscription)
+                          (error () (signal-watch ':terminal generation) nil))
+                        (with-lock-held ((mcp-server-runtime-tools-change-lock runtime))
+                          (mcp-managed-tool-watch-subscription watch)))))
+              (when subscription
+                (unless (eq (nth-value 1 (mcp-subscription--wait subscription timeout t)) :acknowledged)
+                  (mcp-client--stop-subscription subscription)))))))))
+  nil)
+
 (defun mcp-server-runtime--discover-tools-stably
     (runtime &key (allocated-schema-bytes 0))
   "Discover RUNTIME's tools within one stable client connection generation."
   (let ((client (mcp-server-runtime-client runtime)))
     (loop repeat *mcp-tool-discovery-restart-limit*
           do (mcp-client-connect client)
-             (mcp-managed-prepare-client runtime)
              (let ((initial-generation (mcp-client-connection-generation client)))
-               (multiple-value-bind (tools schema-bytes)
-                   (if (mcp-server-runtime--capability-p runtime "tools")
-                       (mcp-managed-prepare-tools
-                        runtime (mcp-client-list-tools client)
-                        :allocated-schema-bytes allocated-schema-bytes)
-                       (values nil 0))
-                 (let ((final-generation (mcp-client-connection-generation client)))
-                   (when (= initial-generation final-generation)
-                     (return (values tools final-generation schema-bytes))))))
+               (if (mcp-managed-watch-tool-changes-p runtime)
+                   (let ((grant (mcp-managed--tool-watch-capability runtime)))
+                     (unless (and grant (eql initial-generation (first grant)))
+                       (mcp-managed--prepare-tool-watch
+                        runtime initial-generation (mcp-subscription--watch-capability-p client))))
+                   (mcp-managed-prepare-client runtime))
+               (mcp-managed--ensure-tool-watch runtime initial-generation)
+              (multiple-value-bind (tools schema-bytes)
+                  (if (mcp-server-runtime--capability-p runtime "tools")
+                      (mcp-managed-prepare-tools
+                       runtime (mcp-client-list-tools client)
+                       :allocated-schema-bytes allocated-schema-bytes)
+                      (values nil 0))
+                (let ((final-generation (mcp-client-connection-generation client)))
+                  (when (= initial-generation final-generation)
+                    (return (values tools final-generation schema-bytes))))))
           finally
              (mcp-managed-error
               runtime nil
@@ -250,6 +371,7 @@
 (defun mcp-server-runtime-close (runtime)
   "Close RUNTIME's client and leave it restartable."
   (with-lock-held ((mcp-server-runtime-lock runtime))
+    (mcp-managed--forget-tool-watch runtime)
     (unwind-protect
         (mcp-managed-call-with-cleanup runtime
          (lambda () (mcp-client-close (mcp-server-runtime-client runtime))))
@@ -266,6 +388,7 @@
 (defun mcp-server-runtime-detach (runtime)
   "Detach RUNTIME's inherited resources without signaling their owner."
   (with-lock-held ((mcp-server-runtime-lock runtime))
+    (mcp-managed--forget-tool-watch runtime)
     (unwind-protect
         (mcp-managed-call-with-cleanup runtime
          (lambda () (mcp-client-detach (mcp-server-runtime-client runtime))))
@@ -458,6 +581,7 @@ Finish pending teardown and join owned workers before propagating a nonlocal exi
   "Close RUNTIME's client and clear retained connection state to STATE.
 
 The caller must hold RUNTIME's lock."
+  (mcp-managed--forget-tool-watch runtime)
   (unwind-protect
       (mcp-managed-call-with-cleanup runtime
        (lambda () (mcp-client-close (mcp-server-runtime-client runtime))))

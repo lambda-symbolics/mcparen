@@ -151,6 +151,9 @@
 (defparameter *fixture-persistent-subscriptions-p* (equal (third sb-ext:*posix-argv*) "persistent")
   "Whether to keep every subscription active for restart tests.")
 
+(defparameter *fixture-watch-mode* (fourth sb-ext:*posix-argv*)
+  "Optional watch capability or acknowledgment mode.")
+
 (defvar *fixture-subscriptions* nil
   "Active requests in persistent mode, newest first.")
 
@@ -171,9 +174,18 @@
   (incf *fixture-listens*)
   (when *fixture-persistent-subscriptions-p*
     (push request *fixture-subscriptions*)
-    (write-json (subscription-notification
-                 request "notifications/subscriptions/acknowledged"
-                 (json-object "notifications" (json-get (json-get request "params") "notifications"))))
+    (unless (equal *fixture-watch-mode* "silent")
+      (write-json (subscription-notification
+                   request "notifications/subscriptions/acknowledged"
+                   (json-object "notifications"
+                                (cond
+                                  ((equal *fixture-watch-mode* "denied")
+                                   (json-object "toolsListChanged" yason:false))
+                                  ((equal *fixture-watch-mode* "malformed")
+                                   (json-object "toolsListChanged" "ignored fixture value"))
+                                  (t
+                                   (json-get (json-get request "params") "notifications")))
+                                "extra" "ignored fixture value"))))
     (return-from handle-listen nil))
   (when *fixture-first-subscription*
     (write-json (subscription-notification
@@ -204,9 +216,21 @@
            (text-result role)))
          (setf *server-request-parent* nil)))
       ((string= method "server/discover")
-       (write-json (response request (json-object "resultType" "complete"
-                                                  "supportedVersions" #("2026-07-28")
-                                                  "capabilities" (json-object)))))
+       (let ((capabilities (json-object)))
+         (when *fixture-watch-mode*
+           (setf (gethash "tools" capabilities)
+                 (cond
+                   ((equal *fixture-watch-mode* "missing")
+                    (json-object))
+                   ((equal *fixture-watch-mode* "false")
+                    (json-object "listChanged" yason:false))
+                   ((equal *fixture-watch-mode* "invalid")
+                    (json-object "listChanged" "true"))
+                   (t
+                    (json-object "listChanged" t)))))
+         (write-json (response request (json-object "resultType" "complete"
+                                                    "supportedVersions" #("2026-07-28")
+                                                    "capabilities" capabilities)))))
       ((string= method "subscriptions/listen")
        (handle-listen request))
       ((string= method "fixture/exit-unexpectedly")
@@ -220,6 +244,13 @@
                                                           (list *fixture-first-subscription*)))))
          (dolist (listen subscriptions)
            (write-json (subscription-notification listen "notifications/tools/list_changed" (json-object)))))
+       (write-json (response request (json-object "resultType" "complete"))))
+      ((string= method "fixture/cancel-subscription")
+       (let ((listen (pop *fixture-subscriptions*)))
+         (when listen
+           (write-json (subscription-notification
+                        listen "notifications/cancelled"
+                        (json-object "requestId" (json-get listen "id") "reason" "ignored fixture value")))))
        (write-json (response request (json-object "resultType" "complete"))))
       ((string= method "fixture/flood-subscription")
        (dotimes (index 129)
@@ -265,7 +296,12 @@
       ((string= method "ping")
        (write-json (response request (json-object))))
       ((string= method "tools/list")
-       (write-json (response request (json-object "tools" #()))))
+       (write-json (response request
+                             (if *fixture-watch-mode*
+                                 (json-object "resultType" "complete" "tools"
+                                              (vector (json-object "name" (format nil "listens-~D" *fixture-listens*)
+                                                                   "inputSchema" (json-object "type" "object"))))
+                                 (json-object "tools" #())))))
       ((string= method "tools/call")
        (let* ((params (json-get request "params"))
               (name   (json-get params "name")))
