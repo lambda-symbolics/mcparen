@@ -148,6 +148,18 @@
 (defvar *fixture-first-subscription* nil
   "The first request, retained so the fixture can interleave two streams.")
 
+(defparameter *fixture-persistent-subscriptions-p* (equal (third sb-ext:*posix-argv*) "persistent")
+  "Whether to keep every subscription active for restart tests.")
+
+(defvar *fixture-subscriptions* nil
+  "Active requests in persistent mode, newest first.")
+
+(defvar *fixture-cancelled-subscription* nil
+  "The last cancellation received from the client.")
+
+(defvar *fixture-listens* 0
+  "The number of subscriptions/listen requests in this process.")
+
 (defun subscription-notification (request method fields)
   "Build a notification correlated to REQUEST."
   (setf (gethash "_meta" fields)
@@ -156,6 +168,13 @@
 
 (defun handle-listen (request)
   "Accept list changes, interleaving the earlier stream before the second ack."
+  (incf *fixture-listens*)
+  (when *fixture-persistent-subscriptions-p*
+    (push request *fixture-subscriptions*)
+    (write-json (subscription-notification
+                 request "notifications/subscriptions/acknowledged"
+                 (json-object "notifications" (json-get (json-get request "params") "notifications"))))
+    (return-from handle-listen nil))
   (when *fixture-first-subscription*
     (write-json (subscription-notification
                  *fixture-first-subscription* "notifications/tools/list_changed" (json-object))))
@@ -190,6 +209,18 @@
                                                   "capabilities" (json-object)))))
       ((string= method "subscriptions/listen")
        (handle-listen request))
+      ((string= method "fixture/exit-unexpectedly")
+       (sb-ext:exit :code 19))
+      ((string= method "fixture/subscription-state")
+       (write-json (response request (json-object "resultType" "complete"
+                                                 "listens" *fixture-listens*
+                                                 "cancelled" (or *fixture-cancelled-subscription* -1)))))
+      ((string= method "fixture/subscription-event")
+       (let ((subscriptions (or *fixture-subscriptions* (when *fixture-first-subscription*
+                                                          (list *fixture-first-subscription*)))))
+         (dolist (listen subscriptions)
+           (write-json (subscription-notification listen "notifications/tools/list_changed" (json-object)))))
+       (write-json (response request (json-object "resultType" "complete"))))
       ((string= method "fixture/flood-subscription")
        (dotimes (index 129)
          (write-json (subscription-notification
@@ -225,9 +256,12 @@
       ((string= method "notifications/initialized")
        nil)
       ((string= method "notifications/cancelled")
-       (format *error-output* "cancelled:~A~%"
-               (json-get (json-get request "params") "requestId"))
-       (finish-output *error-output*))
+       (let ((identifier (json-get (json-get request "params") "requestId")))
+         (setf *fixture-cancelled-subscription* identifier
+               *fixture-subscriptions* (remove identifier *fixture-subscriptions*
+                                               :key (lambda (listen) (json-get listen "id"))))
+         (format *error-output* "cancelled:~A~%" identifier)
+         (finish-output *error-output*)))
       ((string= method "ping")
        (write-json (response request (json-object))))
       ((string= method "tools/list")

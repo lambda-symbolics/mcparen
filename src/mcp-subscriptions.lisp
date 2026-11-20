@@ -3,12 +3,14 @@
 ;;;; -- Stateless Subscriptions --
 
 (defclass mcp-subscription ()
-  ((identifier :initarg :identifier :reader mcp-subscription-id
-               :documentation "The identifier of the long-lived MCP request.")
+  ((identifier :initarg :identifier :reader mcp-subscription-id :writer (setf mcp-subscription--id)
+               :documentation "The wire identifier of the current subscription exchange.")
    (requested :initarg :requested :reader mcp-subscription--requested
               :documentation "The normalized requested filter.")
-   (acknowledged :initform nil :accessor mcp-subscription--acknowledged
-                 :documentation "The accepted filter, or NIL before acknowledgment.")
+   (accepted :initform nil :accessor mcp-subscription--accepted
+             :documentation "The most recently acknowledged filter, or NIL before the first acknowledgment.")
+   (acknowledged-p :initform nil :accessor mcp-subscription--acknowledged-p
+                   :documentation "True when the current exchange is acknowledged.")
    (lock :initform (make-lock "mcparen subscription") :reader mcp-subscription--lock
          :documentation "Serializes acknowledgment, queue and termination.")
    (changed :initform (make-condition-variable) :reader mcp-subscription--changed
@@ -71,9 +73,9 @@
 
 (-> mcp-subscription-acknowledged-filter (mcp-subscription) hash-table)
 (defun mcp-subscription-acknowledged-filter (subscription)
-  "Return a copy of the accepted filter, which can be narrower than requested."
+  "Return a copy of the most recently acknowledged filter, which may be narrower than requested."
   (with-lock-held ((mcp-subscription--lock subscription))
-    (mcp-subscription--filter (mcp-subscription--acknowledged subscription))))
+    (mcp-subscription--filter (mcp-subscription--accepted subscription))))
 
 (-> mcp-subscription--terminate (mcp-subscription keyword &key (:failure t) (:stop-p boolean) (:wire-p boolean)) null)
 (defun mcp-subscription--terminate (subscription status &key failure stop-p wire-p)
@@ -135,7 +137,8 @@
                (method     (json-get message "method"))
                (identifier (mcp-subscription-id subscription))
                (wire-id    (mcp-subscription-wire-id params))
-               (accepted   (mcp-subscription--acknowledged subscription))
+               (accepted   (and (mcp-subscription--acknowledged-p subscription)
+                                (mcp-subscription--accepted subscription)))
                (server-cancel-p
                  (and (string= method "notifications/cancelled")
                       (hash-table-p params)
@@ -149,7 +152,8 @@
                  (when (or accepted (not (mcp-subscription--subset-p
                                           filter (mcp-subscription--requested subscription))))
                    (error (mcp-subscription--protocol-error "Invalid MCP subscription acknowledgment." message)))
-                 (setf (mcp-subscription--acknowledged subscription) filter)))
+                 (setf (mcp-subscription--accepted subscription) filter
+                       (mcp-subscription--acknowledged-p subscription) t)))
               ((not accepted)
                (error (mcp-subscription--protocol-error "An event preceded its subscription acknowledgment." message)))
               (server-cancel-p
@@ -167,27 +171,129 @@
       (mcp-subscription--terminate subscription ':failed :failure condition)
       nil)))
 
-(-> mcp-subscription--run (mcp-client mcp-subscription hash-table &key (:timeout real)) null)
-(defun mcp-subscription--run (client subscription request &key timeout)
+(-> mcp-subscription--exchange-acknowledged-p (mcp-subscription) boolean)
+(defun mcp-subscription--exchange-acknowledged-p (subscription)
+  "Return whether the current exchange has received its acknowledgment."
+  (with-lock-held ((mcp-subscription--lock subscription))
+    (mcp-subscription--acknowledged-p subscription)))
+
+(-> mcp-subscription--complete (mcp-subscription (or null hash-table)) null)
+(defun mcp-subscription--complete (subscription response)
+  "Validate a normal end to the current exchange and retain its outcome."
+  (if response
+      (let* ((identifier (mcp-subscription-id subscription))
+             (result     (mcp-client--validate-response response identifier "subscriptions/listen")))
+        (unless (and (hash-table-p result)
+                     (equal (json-get result "resultType") "complete")
+                     (equal identifier (mcp-subscription-wire-id result))
+                     (mcp-subscription--exchange-acknowledged-p subscription))
+          (error (mcp-subscription--protocol-error "Invalid subscription completion." result)))
+        (mcp-subscription--terminate subscription ':complete))
+      (mcp-subscription--terminate subscription ':dropped)))
+
+(-> mcp-subscription--request-object (mcp-client mcp-subscription) hash-table)
+(defun mcp-subscription--request-object (client subscription)
+  "Build the request for SUBSCRIPTION's current exchange."
+  (mcp-client--request-object
+   client "subscriptions/listen" (mcp-subscription-id subscription)
+   :params (json-object "notifications" (mcp-subscription--requested subscription))))
+
+(-> mcp-subscription--stdio-restore-unlocked (mcp-client mcp-subscription integer) boolean)
+(defun mcp-subscription--stdio-restore-unlocked (client subscription generation)
+  "Restart the lost stdio GENERATION using the client's lifecycle lock, or join its replacement."
+  (unless (and (mcp-client-connected-p client)
+               (equal (mcp-client-protocol-version client) *mcp-modern-protocol-version*)
+               (with-lock-held ((mcp-subscription--lock subscription))
+                 (and (mcp-subscription--acknowledged-p subscription)
+                      (not (mcp-subscription--status subscription)))))
+    (return-from mcp-subscription--stdio-restore-unlocked nil))
+  (let ((transport (mcp-client-transport client)))
+    (when (= generation (mcp-client--connection-generation client))
+      (when (mcp-transport-open-p transport)
+        (return-from mcp-subscription--stdio-restore-unlocked nil))
+      (setf (mcp-client-connected-p client) nil)
+      (mcp-client--connect-unlocked client))
+    (and (equal (mcp-client-protocol-version client) *mcp-modern-protocol-version*)
+         (mcp-transport-open-p transport)
+         (with-lock-held ((mcp-subscription--lock subscription))
+           (unless (mcp-subscription--status subscription)
+             (setf (mcp-subscription--id subscription) (mcp-client--next-identifier-unlocked client)
+                   (mcp-subscription--acknowledged-p subscription) nil
+                   (mcp-subscription--stop subscription) nil)
+             t)))))
+
+(-> mcp-subscription--run-stdio (mcp-client mcp-subscription mcp-stdio-transport
+                                 &key (:generation integer) (:timeout real)) null)
+(defun mcp-subscription--run-stdio (client subscription transport &key generation timeout)
+  "Reissue an acknowledged stdio exchange after loss; never replay an unacknowledged one."
+  (let ((failure nil))
+    (loop
+      (let ((deadline            nil)
+            (exchange-generation generation)
+            (identifier          nil)
+            (pending             nil))
+        (unwind-protect
+             (progn
+               ;; Serialize the write, not the wait, with close and process replacement.
+               (with-lock-held ((mcp-client-lock client))
+                 (unless (if failure
+                             (mcp-subscription--stdio-restore-unlocked client subscription generation)
+                             (and (= generation (mcp-client--connection-generation client))
+                                  (with-lock-held ((mcp-subscription--lock subscription))
+                                    (not (mcp-subscription--status subscription)))))
+                   (mcp-subscription--terminate subscription ':dropped :failure failure)
+                   (return))
+                 (setf generation (mcp-client--connection-generation client)
+                       exchange-generation generation
+                       deadline (mcp-stdio--deadline timeout))
+                 (multiple-value-setq (identifier pending)
+                   (mcp-stdio--start-request
+                    transport (mcp-subscription--request-object client subscription)
+                    :deadline deadline :timeout timeout
+                    :receive (lambda (message) (mcp-subscription--receive subscription message)))))
+               (mcp-subscription--install-cancel
+                subscription
+                (lambda (wire-p)
+                  (if wire-p
+                      (with-lock-held ((mcp-client-lock client))
+                        (mcp-stdio--cancel-request
+                         transport identifier pending
+                         :timeout timeout
+                         :wire-p  (and (= exchange-generation (mcp-client--connection-generation client))
+                                       (mcp-transport-open-p transport))))
+                      (mcp-stdio--cancel-request transport identifier pending :timeout timeout))))
+               (handler-case
+                   (let ((response
+                           (mcp-stdio--take-response
+                            transport identifier pending :deadline deadline :timeout timeout
+                            :acknowledged-p (lambda () (mcp-subscription--exchange-acknowledged-p subscription)))))
+                     (mcp-subscription--complete subscription response)
+                     (return))
+                 (mcp-timeout (condition)
+                   (handler-case (mcp-subscription--terminate subscription ':dropped :failure condition
+                                                              :stop-p t :wire-p t)
+                     (mcp-transport-error () nil))
+                   (return))
+                 (mcp-transport-error (condition)
+                   (setf failure condition))))
+          (when pending
+            (mcp-stdio--discard-request transport identifier pending))))))
+  nil)
+
+(-> mcp-subscription--run (mcp-client mcp-subscription &key (:generation integer) (:timeout real)) null)
+(defun mcp-subscription--run (client subscription &key generation timeout)
   "Run the long-lived exchange and retain the first terminal outcome."
   (unwind-protect
        (handler-case
-           (let ((response
-                   (mcp-transport-listen
-                    (mcp-client-transport client) request timeout
-                     :receive       (lambda (message) (mcp-subscription--receive subscription message))
-                    :install-cancel (lambda (stop) (mcp-subscription--install-cancel subscription stop)))))
-             (if response
-                 (let ((result (mcp-client--validate-response
-                                response (mcp-subscription-id subscription) "subscriptions/listen")))
-                   (unless (and (hash-table-p result)
-                                (equal (json-get result "resultType") "complete")
-                                (equal (mcp-subscription-id subscription) (mcp-subscription-wire-id result))
-                                (with-lock-held ((mcp-subscription--lock subscription))
-                                  (mcp-subscription--acknowledged subscription)))
-                     (error (mcp-subscription--protocol-error "Invalid subscription completion." result)))
-                   (mcp-subscription--terminate subscription ':complete))
-                 (mcp-subscription--terminate subscription ':dropped)))
+           (let ((transport (mcp-client-transport client)))
+             (if (typep transport 'mcp-stdio-transport)
+                 (mcp-subscription--run-stdio client subscription transport :generation generation :timeout timeout)
+                 (mcp-subscription--complete
+                  subscription
+                  (mcp-transport-listen
+                   transport (mcp-subscription--request-object client subscription) timeout
+                   :receive        (lambda (message) (mcp-subscription--receive subscription message))
+                   :install-cancel (lambda (stop) (mcp-subscription--install-cancel subscription stop))))))
          (mcp-transport-error (condition)
            (mcp-subscription--terminate subscription ':dropped :failure condition))
          (error (condition)
@@ -203,7 +309,7 @@
                                    (ceiling (* timeout internal-time-units-per-second))))))
     (with-lock-held ((mcp-subscription--lock subscription))
       (loop
-        (when (and acknowledgment-p (mcp-subscription--acknowledged subscription))
+        (when (and acknowledgment-p (mcp-subscription--accepted subscription))
           (return (values nil ':acknowledged nil)))
         (when (and (not acknowledgment-p) (mcp-subscription--events subscription))
           (return (values (pop (mcp-subscription--events subscription)) ':notification nil)))
@@ -234,14 +340,12 @@
     (with-lock-held ((mcp-client-lock client))
       (unless (equal (mcp-client-protocol-version client) *mcp-modern-protocol-version*)
         (error (mcp-subscription--protocol-error "subscriptions/listen requires MCP 2026-07-28.")))
-      (let* ((identifier (mcp-client--next-identifier-unlocked client))
-             (request    (mcp-client--request-object
-                          client "subscriptions/listen" identifier
-                          :params (json-object "notifications" filter))))
+      (let ((identifier (mcp-client--next-identifier-unlocked client))
+            (generation (mcp-client--connection-generation client)))
         (setf subscription (make-instance 'mcp-subscription :identifier identifier :requested filter)
               (gethash subscription (mcp-client--subscriptions client)) t)
         (handler-case
-            (make-thread (lambda () (mcp-subscription--run client subscription request :timeout timeout))
+            (make-thread (lambda () (mcp-subscription--run client subscription :generation generation :timeout timeout))
                          :name "mcparen subscription")
           (error (condition)
             (remhash subscription (mcp-client--subscriptions client))

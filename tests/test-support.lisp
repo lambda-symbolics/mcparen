@@ -320,15 +320,16 @@ so it starts without crawling every system the host happens to have."
     (&key (:maximum-message-characters t)
           (:request-handler t)
           (:notification-handler t)
-          (:ingress-projector t))
+          (:ingress-projector t)
+          (:fixture-arguments list))
     mcp-stdio-transport)
 (defun make-test-stdio-transport
     (&key maximum-message-characters
-      request-handler notification-handler ingress-projector)
+     request-handler notification-handler ingress-projector fixture-arguments)
   "Return a stdio transport connected to the local Common Lisp fixture."
   (make-mcp-stdio-transport
    (namestring sb-ext:*runtime-pathname*)
-   :arguments            (test-fixture-script-arguments "stdio-server.lisp")
+   :arguments            (append (test-fixture-script-arguments "stdio-server.lisp") fixture-arguments)
    :maximum-message-characters
    (or maximum-message-characters
        *mcp-maximum-message-characters*)

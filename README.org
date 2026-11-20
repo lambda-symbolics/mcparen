@@ -162,10 +162,12 @@ the subscription open. Each handle buffers up to 128 notifications in arrival
 order. On overflow, the handle terminates; drain the queued events, then
 read =:failed= and its condition. A stalled consumer does not block unrelated
 stdio replies. Cancel to close only the HTTP response stream or send a stdio
-cancellation notification. A disconnect ends the handle; call
-=mcp-client-listen= again to re-establish the subscription after reconnecting.
-Mcparen does not automatically restore subscriptions when a stdio process is
-replaced.
+cancellation notification. On unexpected stdio process loss, Mcparen attempts
+one restart and re-sends active, acknowledged subscriptions on the same handles.
+Each restored exchange has a fresh =mcp-subscription-id= and must receive its own
+acknowledgment. Queued events keep their original IDs. Ordinary requests are not
+retried. An HTTP disconnect ends the subscription; call =mcp-client-listen=
+again after reconnecting.
 
 * Managed connections
 

@@ -594,9 +594,10 @@ method-not-found response. The function must be bounded and thread-safe."
                   (gethash identifier (mcp-stdio-transport-pending-requests transport)))))
           (let ((receiver (and pending (mcp-stdio-pending-subscription-receiver pending))))
             (when receiver
-              (unless (funcall receiver message)
+              (let ((continue-p (funcall receiver message)))
                 (with-lock-held ((mcp-stdio-transport-state-lock transport))
-                  (setf (mcp-stdio-pending-cancelled-p pending) t)
+                  (unless continue-p
+                    (setf (mcp-stdio-pending-cancelled-p pending) t))
                   (condition-notify (mcp-stdio-pending-condition-variable pending)))))))
         t))))
 
@@ -885,11 +886,11 @@ method-not-found response. The function must be bounded and thread-safe."
 
 (-> mcp-stdio--take-response
     (mcp-stdio-transport t mcp-stdio-pending-request
-     &key (:deadline (or null integer)) (:timeout real))
+     &key (:deadline (or null integer)) (:timeout real) (:acknowledged-p (or null function)))
     (or null hash-table))
 (defun mcp-stdio--take-response
-    (transport identifier pending &key deadline timeout)
-  "Wait for and remove IDENTIFIER's response before DEADLINE."
+    (transport identifier pending &key deadline timeout acknowledged-p)
+  "Wait for IDENTIFIER's response, dropping the deadline after subscription acknowledgment."
   (with-lock-held ((mcp-stdio-transport-state-lock transport))
     (loop
       (let ((response (mcp-stdio-pending-response pending)))
@@ -897,6 +898,11 @@ method-not-found response. The function must be bounded and thread-safe."
           (return response)))
       (when (mcp-stdio-pending-cancelled-p pending)
         (return nil))
+      ;; A replacement can clear the reader failure before an old waiter runs.
+      (unless (eq pending (gethash identifier (mcp-stdio-transport-pending-requests transport)))
+        (error 'mcp-transport-error
+               :message "The MCP stdio connection changed during the request."
+               :transport transport :cause nil))
       (when (mcp-stdio-transport-reader-failure transport)
         (let ((failure (mcp-stdio-transport-reader-failure transport))
               (stderr  (mcp-stdio-transport-stderr-text transport)))
@@ -910,81 +916,93 @@ method-not-found response. The function must be bounded and thread-safe."
                              (and (plusp (length stderr)) stderr))
                      :transport transport
                      :cause     failure))))
+      (when (and deadline acknowledged-p (funcall acknowledged-p))
+        (setf deadline nil))
       (let ((remaining (and deadline (mcp-stdio--remaining-seconds deadline))))
         (when (and remaining (not (plusp remaining)))
           (error 'mcp-timeout
                  :message
-                 (format nil "MCP stdio request ~S timed out after ~,2F seconds."
-                         identifier timeout)
+                 (if acknowledged-p
+                     "The MCP subscription acknowledgment timed out."
+                     (format nil "MCP stdio request ~S timed out after ~,2F seconds." identifier timeout))
                  :transport transport
                  :cause     nil
-                 :operation "JSON-RPC request"
+                 :operation (if acknowledged-p "subscriptions/listen" "JSON-RPC request")
                  :seconds   timeout))
         (condition-wait
          (mcp-stdio-pending-condition-variable pending)
          (mcp-stdio-transport-state-lock transport)
          :timeout remaining)))))
 
+(-> mcp-stdio--discard-request (mcp-stdio-transport t mcp-stdio-pending-request) null)
+(defun mcp-stdio--discard-request (transport identifier pending)
+  "Remove PENDING if it is still registered on TRANSPORT."
+  (with-lock-held ((mcp-stdio-transport-state-lock transport))
+    (let ((requests (mcp-stdio-transport-pending-requests transport)))
+      (when (eq pending (gethash identifier requests))
+        (remhash identifier requests))))
+  nil)
+
+(-> mcp-stdio--start-request
+    (mcp-stdio-transport hash-table &key (:deadline integer) (:timeout real) (:receive (or null function)))
+    (values t mcp-stdio-pending-request))
+(defun mcp-stdio--start-request (transport request &key deadline timeout receive)
+  "Register and write REQUEST before waiting for a response."
+  (unless (mcp-transport-open-p transport)
+    (error 'mcp-transport-error :message "The MCP stdio transport is closed."
+                               :transport transport :cause nil))
+  (let ((identifier (json-get request "id" :absent))
+        (pending    (make-instance 'mcp-stdio-pending-request :subscription-receiver receive)))
+    (when (eq identifier :absent)
+      (error 'mcp-protocol-error :message "An MCP request requires a JSON-RPC identifier."
+                                :method (json-get request "method") :payload request))
+    (with-lock-held ((mcp-stdio-transport-state-lock transport))
+      (let ((requests (mcp-stdio-transport-pending-requests transport)))
+        (when (gethash identifier requests)
+          (error 'mcp-protocol-error
+                 :message (format nil "Duplicate in-flight MCP request identifier ~S." identifier)
+                 :method (json-get request "method") :payload nil))
+        (setf (gethash identifier requests) pending)))
+    (handler-case
+        (mcp-stdio--write-message transport request :deadline deadline :timeout timeout
+                                                    :operation "JSON-RPC request")
+      (error (condition)
+        (mcp-stdio--discard-request transport identifier pending)
+        (error condition)))
+    (values identifier pending)))
+
+(-> mcp-stdio--cancel-request
+    (mcp-stdio-transport t mcp-stdio-pending-request &key (:wire-p boolean) (:timeout real)) null)
+(defun mcp-stdio--cancel-request (transport identifier pending &key wire-p timeout)
+  "Stop waiting for PENDING and optionally send cancellation to the current process."
+  (unwind-protect
+       (when wire-p
+         (mcp-transport-notify transport
+                               (json-object "jsonrpc" "2.0" "method" "notifications/cancelled"
+                                            "params" (json-object "requestId" identifier))
+                               (min timeout 2)))
+    (with-lock-held ((mcp-stdio-transport-state-lock transport))
+      (setf (mcp-stdio-pending-cancelled-p pending) t)
+      (condition-notify (mcp-stdio-pending-condition-variable pending))))
+  nil)
+
 (-> mcp-stdio--request (mcp-stdio-transport hash-table real
-                          &key (:receive (or null function)) (:install-cancel (or null function)))
+                           &key (:receive (or null function)) (:install-cancel (or null function)))
     (or null hash-table))
 (defun mcp-stdio--request (transport request timeout &key receive install-cancel)
   "Serialize REQUEST and wait for its response or an explicit cancellation."
-  (unless (mcp-transport-open-p transport)
-    (error 'mcp-transport-error
-           :message   "The MCP stdio transport is closed."
-           :transport transport
-           :cause     nil))
-  (let ((identifier (json-get request "id" :absent)))
-    (when (eq identifier :absent)
-      (error 'mcp-protocol-error
-             :message "An MCP request requires a JSON-RPC identifier."
-             :method  (json-get request "method")
-             :payload request))
-    (let ((pending (make-instance 'mcp-stdio-pending-request :subscription-receiver receive)))
-      (with-lock-held ((mcp-stdio-transport-state-lock transport))
-        (when (gethash
-               identifier
-               (mcp-stdio-transport-pending-requests transport))
-          (error 'mcp-protocol-error
-                 :message
-                 (format nil "Duplicate in-flight MCP request identifier ~S."
-                         identifier)
-                 :method  (json-get request "method")
-                 :payload nil))
-        (setf (gethash
-               identifier
-               (mcp-stdio-transport-pending-requests transport))
-              pending))
-      (let ((deadline (mcp-stdio--deadline timeout)))
-        (unwind-protect
-             (progn
-               (mcp-stdio--write-message transport request
-                                         :deadline  deadline
-                                         :timeout   timeout
-                                         :operation "JSON-RPC request")
-               (when install-cancel
-                 (funcall install-cancel
-                          (lambda (wire-p)
-                            (unwind-protect
-                                 (when wire-p
-                                   (mcp-transport-notify
-                                    transport
-                                    (json-object "jsonrpc" "2.0"
-                                                 "method" "notifications/cancelled"
-                                                 "params" (json-object "requestId" identifier))
-                                    (min timeout 2)))
-                              (with-lock-held ((mcp-stdio-transport-state-lock transport))
-                                (setf (mcp-stdio-pending-cancelled-p pending) t)
-                                (condition-notify
-                                 (mcp-stdio-pending-condition-variable pending)))))))
-               (mcp-stdio--take-response transport identifier pending
-                                          :deadline (unless install-cancel deadline)
-                                         :timeout   timeout))
-          (with-lock-held ((mcp-stdio-transport-state-lock transport))
-            (remhash
-             identifier
-             (mcp-stdio-transport-pending-requests transport))))))))
+  (let ((deadline (mcp-stdio--deadline timeout)))
+    (multiple-value-bind (identifier pending)
+        (mcp-stdio--start-request transport request :deadline deadline :timeout timeout :receive receive)
+      (unwind-protect
+           (progn
+             (when install-cancel
+               (funcall install-cancel
+                        (lambda (wire-p)
+                          (mcp-stdio--cancel-request transport identifier pending :wire-p wire-p :timeout timeout))))
+             (mcp-stdio--take-response transport identifier pending
+                                       :deadline (unless install-cancel deadline) :timeout timeout))
+        (mcp-stdio--discard-request transport identifier pending)))))
 
 (defmethod mcp-transport-request ((transport mcp-stdio-transport) request timeout)
   "Wait for a one-shot request within its deadline."

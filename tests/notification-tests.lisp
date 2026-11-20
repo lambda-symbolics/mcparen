@@ -176,6 +176,117 @@
         (test-equal ':failed status)
         (test-assert (typep failure 'mcp-protocol-error))))))
 
+(define-test modern-stdio-restores-subscription-after-unexpected-exit
+  (let ((transport (make-test-stdio-transport)))
+    (with-mcp-client (client (make-mcp-client transport :protocol-mode ':auto :startup-timeout 3))
+      (let* ((subscription (mcp-client-listen client (json-object "toolsListChanged" t)))
+             (original-id  (mcp-subscription-id subscription))
+             (process      (mcp-stdio-transport-process transport)))
+        (test-signals mcp-transport-error
+          (mcp-client--request client "fixture/exit-unexpectedly" :timeout 3))
+        (mcp-client-connect client)
+        (test-assert (not (eq process (mcp-stdio-transport-process transport))))
+        (test-assert (test-wait-until
+                      (lambda () (/= original-id (mcp-subscription-id subscription))) 3)
+                     "Reconnection must reissue the active subscription with a fresh ID.")
+        (mcp-client--request client "fixture/subscription-event" :timeout 3)
+        (multiple-value-bind (event status) (mcp-subscription-next subscription :timeout 3)
+          (test-equal ':notification status)
+          (test-equal (mcp-subscription-id subscription)
+                      (mcp-subscription-wire-id (json-get event "params"))))))))
+
+(define-test modern-stdio-restores-concurrent-streams-and-keeps-queued-events
+  (let ((transport (make-test-stdio-transport :fixture-arguments '("persistent")))
+        (request   (json-object "toolsListChanged" t)))
+    (with-mcp-client (client (make-mcp-client transport :protocol-mode ':auto :startup-timeout 3))
+      (let* ((first-stream  (mcp-client-listen client request))
+             (second-stream (mcp-client-listen client request))
+             (cancelled     (mcp-client-listen client request))
+             (streams       (list first-stream second-stream))
+             (original-ids  (mapcar #'mcp-subscription-id streams))
+             (generation    (mcp-client-connection-generation client)))
+        (mcp-subscription-cancel cancelled)
+        (mcp-client--request client "fixture/subscription-event" :timeout 3)
+        (test-signals mcp-transport-error
+          (mcp-client--request client "fixture/exit-unexpectedly" :timeout 3))
+        ;; Only the subscription workers can start the replacement here.
+        (test-assert (test-wait-until
+                      (lambda () (every #'> (mapcar #'mcp-subscription-id streams) original-ids)) 5))
+        (let ((state (mcp-client--request client "fixture/subscription-state" :timeout 3)))
+          (test-equal 2 (json-get state "listens"))
+          (test-equal -1 (json-get state "cancelled")))
+        (test-equal (1+ generation) (mcp-client-connection-generation client))
+        (mcp-client--request client "fixture/subscription-event" :timeout 3)
+        (loop for stream in streams
+              for original-id in original-ids
+              do (dolist (identifier (list original-id (mcp-subscription-id stream)))
+                   (multiple-value-bind (event status) (mcp-subscription-next stream :timeout 3)
+                     (test-equal ':notification status)
+                     (test-equal identifier (mcp-subscription-wire-id (json-get event "params"))))))
+        (mcp-subscription-cancel first-stream)
+        (let ((state (mcp-client--request client "fixture/subscription-state" :timeout 3)))
+          (test-equal (mcp-subscription-id first-stream) (json-get state "cancelled")))
+        (test-equal ':cancelled (nth-value 1 (mcp-subscription-next first-stream :timeout 1)))
+        (mcp-client-close client)
+        (test-equal ':dropped (nth-value 1 (mcp-subscription-next second-stream :timeout 1)))
+        (mcp-client-connect client)
+        (test-equal 0 (json-get (mcp-client--request client "fixture/subscription-state" :timeout 3) "listens"))))))
+
+(define-test modern-stdio-restoration-requires-a-fresh-acknowledgment
+  (dolist (mode '(:no-ack :invalid-ack :early-event :exit :cancel :close))
+    (let* ((seen-ack-p nil)
+           (transport
+             (make-test-stdio-transport
+              :fixture-arguments '("persistent")
+              :ingress-projector
+              (lambda (kind message)
+                (if (and (eq kind ':notification)
+                         (equal "notifications/subscriptions/acknowledged" (json-get message "method")))
+                    (cond
+                      ((not seen-ack-p)
+                       (setf seen-ack-p t)
+                       message)
+                      ((eq mode ':invalid-ack)
+                       (setf (gethash "notifications" (json-get message "params"))
+                             (json-object "promptsListChanged" t))
+                       message)
+                      (t
+                       nil))
+                    message)))))
+      (with-mcp-client (client (make-mcp-client transport :protocol-mode ':auto :startup-timeout 3))
+        (let* ((subscription (mcp-client-listen client (json-object "toolsListChanged" t) :timeout 1))
+               (original-id  (mcp-subscription-id subscription))
+               (generation   (mcp-client-connection-generation client)))
+          (test-signals mcp-transport-error
+            (mcp-client--request client "fixture/exit-unexpectedly" :timeout 3))
+          (test-assert (test-wait-until (lambda () (> (mcp-subscription-id subscription) original-id)) 5))
+          (ecase mode
+            (:no-ack
+             (multiple-value-bind (event status failure) (mcp-subscription-next subscription :timeout 3)
+               (test-assert (not event))
+               (test-equal ':dropped status)
+               (test-assert (typep failure 'mcp-timeout))))
+            ((:invalid-ack :early-event)
+             (when (eq mode ':early-event)
+               (mcp-client--request client "fixture/subscription-event" :timeout 3))
+             (multiple-value-bind (event status failure) (mcp-subscription-next subscription :timeout 3)
+               (test-assert (not event))
+               (test-equal ':failed status)
+               (test-assert (typep failure 'mcp-protocol-error))))
+            (:exit
+             (test-signals mcp-transport-error
+               (mcp-client--request client "fixture/exit-unexpectedly" :timeout 3))
+             (test-equal ':dropped (nth-value 1 (mcp-subscription-next subscription :timeout 3)))
+             (test-equal (1+ generation) (mcp-client-connection-generation client))
+             (test-assert (not (mcp-transport-open-p transport))))
+            (:cancel
+             (mcp-subscription-cancel subscription)
+             (test-equal ':cancelled (nth-value 1 (mcp-subscription-next subscription :timeout 1))))
+            (:close
+             (mcp-client-close client)
+             (test-equal ':dropped (nth-value 1 (mcp-subscription-next subscription :timeout 1)))
+             (test-assert (not (mcp-transport-open-p transport))))))))))
+
 (define-test modern-stdio-close-and-cancel-wake-a-waiting-consumer
   (dolist (action '(:close :cancel))
     (let ((client (make-mcp-client (make-test-stdio-transport) :protocol-mode ':auto :startup-timeout 3)))
