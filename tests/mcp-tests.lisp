@@ -3790,6 +3790,42 @@
     (test-assert
      (not (mcp-http--valid-retry-value-p value)))))
 
+(define-test http-idle-listener-projects-scope-failures-before-retention
+  (let ((secret "fixture-echoed-header"))
+    (dolist (mode '(:project :error :invalid))
+      (let ((projected-p nil)
+            (transport   nil))
+        (setf transport
+              (make-mcp-streamable-http-transport
+                "https://example.invalid/mcp"
+                :exchange-scope-function
+                (lambda (thunk)
+                  (declare (ignore thunk))
+                  (error "Echoed ~A" secret))
+                :listener-failure-projector
+                (lambda (condition)
+                  (setf projected-p
+                        (and (search secret (princ-to-string condition))
+                             ;; This accessor takes the nonrecursive state lock.
+                             (mcp-transport-open-p transport)))
+                  (ecase mode
+                    (:project
+                     (make-condition 'simple-error :format-control "Projected failure"))
+                    (:error
+                     (error "Projection failed for ~A" secret))
+                    (:invalid
+                     secret)))))
+        (mcp-transport-open transport)
+        (setf (mcp-http-transport-listener-stopping-p transport) nil)
+        (mcp-http--idle-listener-loop transport 0)
+        (let ((failure (mcp-http-transport-listener-failure transport)))
+          (test-assert projected-p)
+          (test-assert (typep failure (if (eq mode ':project)
+                                        'simple-error
+                                        'mcp-transport-error)))
+          (test-assert (not (search secret (princ-to-string failure)))))
+        (mcp-transport-detach transport)))))
+
 (define-test http-idle-get-rejects-json-rpc-responses
   (labels ((handler (server request)
              "Emit a forbidden response through the idle GET stream."

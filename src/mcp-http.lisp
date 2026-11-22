@@ -59,6 +59,12 @@
     :documentation
     "A function that synchronously calls a zero-argument thunk around each
 complete HTTP exchange, preserving its values and unwinding on failures.")
+   (listener-failure-projector
+    :initarg  :listener-failure-projector
+    :initform #'identity
+    :reader   mcp-http--listener-failure-projector
+    :type     function
+    :documentation "A function projecting a terminal listener condition before retention.")
    (connect-timeout
     :initarg       :connect-timeout
     :initform      *mcp-http-default-connect-timeout*
@@ -150,6 +156,7 @@ complete HTTP exchange, preserving its values and unwinding on failures.")
 (-> make-mcp-streamable-http-transport
     (string &key (:headers-function function)
                  (:exchange-scope-function function)
+                 (:listener-failure-projector function)
                  (:connect-timeout real)
                  (:request-handler t)
                  (:notification-handler t)
@@ -159,6 +166,7 @@ complete HTTP exchange, preserving its values and unwinding on failures.")
     (url &key (headers-function (constantly nil))
               (exchange-scope-function
                 #'mcp-http--identity-exchange-scope)
+              (listener-failure-projector #'identity)
               (connect-timeout *mcp-http-default-connect-timeout*)
               request-handler notification-handler
               (maximum-message-characters *mcp-maximum-message-characters*))
@@ -169,7 +177,12 @@ need to retain secret header values in a long-lived client object.
 
 EXCHANGE-SCOPE-FUNCTION receives a zero-argument thunk for each complete HTTP
 exchange. It must call the thunk synchronously exactly once and preserve all
-returned values. The default calls the thunk without adding a scope."
+returned values. The default calls the thunk without adding a scope.
+
+LISTENER-FAILURE-PROJECTOR receives the terminal listener condition before
+it is retained. It runs without the HTTP state lock, may run outside the
+exchange scope, and must not acquire client lifecycle locks. The default
+retains the original condition. The projector must return a condition."
   (unless (and (stringp url) (plusp (length url)))
     (error 'mcp-transport-error
            :message   "An MCP Streamable HTTP endpoint must be a non-empty URL."
@@ -185,6 +198,11 @@ returned values. The default calls the thunk without adding a scope."
            :message   "The MCP HTTP exchange scope must be a function."
            :transport nil
            :cause     nil))
+  (unless (functionp listener-failure-projector)
+    (error 'mcp-transport-error
+           :message   "The MCP HTTP listener failure projector must be a function."
+           :transport nil
+           :cause     nil))
   (unless (and (integerp maximum-message-characters)
                (plusp maximum-message-characters))
     (error 'mcp-transport-error
@@ -195,6 +213,7 @@ returned values. The default calls the thunk without adding a scope."
                  :url                        url
                  :headers-function           headers-function
                  :exchange-scope-function    exchange-scope-function
+                 :listener-failure-projector listener-failure-projector
                  :connect-timeout            connect-timeout
                  :request-handler            request-handler
                  :notification-handler       notification-handler
@@ -1283,15 +1302,26 @@ protocol checks."
     null)
 (defun mcp-http--listener-record-failure
     (transport generation condition)
-  "Record terminal listener CONDITION for GENERATION."
-  (with-lock-held ((mcp-http-transport-state-lock transport))
-    (when (= generation
-             (mcp-http-transport-listener-generation transport))
-      (setf (mcp-http-transport-listener-stopping-p transport) t
-            (mcp-http-transport-listener-support-state transport) ':failed
-            (mcp-http-transport-listener-failure transport) condition)
-      (condition-notify
-       (mcp-http-transport-listener-condition-variable transport))))
+  "Project and record terminal listener CONDITION for GENERATION."
+  (let ((projected
+          (or (handler-case
+                  (let ((value (funcall (mcp-http--listener-failure-projector
+                                        transport)
+                                       condition)))
+                    (and (typep value 'condition) value))
+                (error () nil))
+              (make-condition 'mcp-transport-error
+                              :message "MCP HTTP listener failure could not be projected."
+                              :transport nil
+                              :cause nil))))
+    (with-lock-held ((mcp-http-transport-state-lock transport))
+      (when (= generation
+               (mcp-http-transport-listener-generation transport))
+        (setf (mcp-http-transport-listener-stopping-p transport) t
+              (mcp-http-transport-listener-support-state transport) ':failed
+              (mcp-http-transport-listener-failure transport) projected)
+        (condition-notify
+         (mcp-http-transport-listener-condition-variable transport)))))
   nil)
 
 (-> mcp-http--listener-wait-before-resumption
