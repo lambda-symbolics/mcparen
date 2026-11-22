@@ -61,6 +61,7 @@
            #:mcp-call-result-text
            #:mcp-client
            #:mcp-client-call-tool
+           #:mcp-client-clear-retained-state
            #:mcp-client-client-capabilities
            #:mcp-client-client-info
            #:mcp-client-close
@@ -76,6 +77,7 @@
            #:mcp-client-list-resources
            #:mcp-client-list-tools
            #:mcp-client-ping
+           #:mcp-client-project-retained-state
            #:mcp-client-protocol-mode
            #:mcp-client-protocol-version
            #:mcp-client-read-resource

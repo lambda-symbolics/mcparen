@@ -2,6 +2,44 @@
 
 ;;;; -- Protocol and Client Tests --
 
+(define-test client-projects-and-clears-retained-state
+  (let* ((stdio        (make-mcp-stdio-transport "unused"))
+         (http         (make-mcp-streamable-http-transport
+                        "https://example.test/mcp"))
+         (stdio-client (make-mcp-client stdio))
+         (http-client  (make-mcp-client http)))
+    (setf (mcp-stdio-transport-stderr-text stdio) "stderr"
+          (mcp-http-transport-session-identifier http) "active"
+          (mcp-http-transport-pending-session-identifier http) "pending"
+          (mcp-http-transport-listener-failure http) "failure")
+    (dolist (client (list stdio-client http-client))
+      (setf (mcp-client-instructions client) "instructions"
+            (mcp-client-server-info client) "info"
+            (mcp-client-server-capabilities client) "capabilities")
+      (mcp-client-project-retained-state
+       client
+       (lambda (field value)
+         (if (eq field ':instructions)
+             value
+             (string-upcase value))))
+      (test-equal "instructions" (mcp-client-instructions client) :test #'string=)
+      (test-equal "INFO" (mcp-client-server-info client) :test #'string=)
+      (test-equal "CAPABILITIES" (mcp-client-server-capabilities client)
+                  :test #'string=))
+    (test-equal "STDERR" (mcp-stdio-transport-stderr-text stdio) :test #'string=)
+    (test-equal "ACTIVE" (mcp-http-transport-session-identifier http) :test #'string=)
+    (test-equal "PENDING" (mcp-http-transport-pending-session-identifier http)
+                :test #'string=)
+    (test-equal "FAILURE" (mcp-http-transport-listener-failure http) :test #'string=)
+    (dolist (client (list stdio-client http-client))
+      (mcp-client-clear-retained-state client)
+      (test-assert (null (mcp-client-instructions client)))
+      (test-assert (null (mcp-client-server-info client)))
+      (test-assert (null (mcp-client-server-capabilities client))))
+    (test-equal "" (mcp-stdio-transport-stderr-text stdio) :test #'string=)
+    (test-assert (null (mcp-http-transport-session-identifier http)))
+    (test-assert (null (mcp-http-transport-pending-session-identifier http)))
+    (test-assert (null (mcp-http-transport-listener-failure http)))))
 (define-test client-initializes-with-supported-protocol
   (let* ((transport
            (make-test-scripted-transport #'test-default-handler))

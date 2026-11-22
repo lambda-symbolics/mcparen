@@ -331,6 +331,68 @@ interprets it for protocol revisions that define task-augmented requests.")
                    :startup-timeout     startup-timeout
                    :tool-timeout        tool-timeout)))
 
+(-> mcp-client--project-retained-state (mcp-client (or function null)) null)
+(defun mcp-client--project-retained-state (client projector)
+  "Replace selected retained values, or reset them when PROJECTOR is NIL."
+  (flet ((project (field value cleared)
+           (if projector
+               (funcall projector field value)
+               cleared)))
+    (with-lock-held ((mcp-client-lock client))
+      (let ((transport (mcp-client-transport client)))
+        (setf (mcp-client-instructions client)
+              (project ':instructions (mcp-client-instructions client) nil)
+              (mcp-client-server-capabilities client)
+              (project ':server-capabilities
+                       (mcp-client-server-capabilities client) nil)
+              (mcp-client-server-info client)
+              (project ':server-info (mcp-client-server-info client) nil))
+        (typecase transport
+          (mcp-stdio-transport
+           (with-lock-held ((mcp-stdio-transport-state-lock transport))
+             (setf (mcp-stdio-transport-stderr-text transport)
+                   (project ':stderr-text
+                            (mcp-stdio-transport-stderr-text transport) ""))))
+          (mcp-streamable-http-transport
+           (with-lock-held ((mcp-http-transport-state-lock transport))
+             (setf (mcp-http-transport-session-identifier transport)
+                   (project ':session-identifier
+                            (mcp-http-transport-session-identifier transport)
+                            nil)
+                   (mcp-http-transport-pending-session-identifier transport)
+                   (project ':pending-session-identifier
+                            (mcp-http-transport-pending-session-identifier
+                             transport)
+                            nil)
+                   (mcp-http-transport-listener-failure transport)
+                   (project ':listener-failure
+                            (mcp-http-transport-listener-failure transport)
+                            nil))))))))
+  nil)
+
+(-> mcp-client-project-retained-state (mcp-client function) null)
+(defun mcp-client-project-retained-state (client projector)
+  "Replace selected current CLIENT values with PROJECTOR's results.
+
+PROJECTOR receives a field keyword and its current value, including absent
+values. The client fields are :INSTRUCTIONS, :SERVER-CAPABILITIES and
+:SERVER-INFO. The transport fields are :STDERR-TEXT for stdio and
+:SESSION-IDENTIFIER, :PENDING-SESSION-IDENTIFIER and :LISTENER-FAILURE
+for Streamable HTTP. Return the current value to leave a field untouched.
+
+Callbacks run under the relevant state locks. They must not reenter the
+client or transport and must return a value suitable for the field.
+This mutates retained values only, without starting or stopping a session."
+  (mcp-client--project-retained-state client projector))
+
+(-> mcp-client-clear-retained-state (mcp-client) null)
+(defun mcp-client-clear-retained-state (client)
+  "Reset the fields visited by MCP-CLIENT-PROJECT-RETAINED-STATE.
+
+Clear stderr text to the empty string and the other fields to NIL.
+This does not close CLIENT or erase independent copies of these values."
+  (mcp-client--project-retained-state client nil))
+
 (-> mcp-client-connection-generation (mcp-client) integer)
 (defun mcp-client-connection-generation (client)
   "Return CLIENT's current connection generation under its lifecycle lock."
